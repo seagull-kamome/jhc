@@ -1,11 +1,6 @@
-{-# OPTIONS_GHC -cpp #-}
-{-# LANGUAGE CPP #-}
-
-#include "hs_src_config.h"
-
 -- This module contains routines to provide an interactive shell prompt and is
 -- built on top of the readline library.
-
+{-# LANGUAGE CPP #-}
 module Util.Interact(
     Interact(..),
     InteractCommand(..),
@@ -14,23 +9,19 @@ module Util.Interact(
     runInteractions,
     emptyInteract) where
 
-import Char
+import Data.Char
 import Control.Monad.Identity
-import List
+import Data.List
 import qualified Data.Map as Map
-import System
+import qualified System.Process as System (system)
 import System.Directory
-import IO
-#if    USE_EDITLINE
-   ;import System.Console.Editline.Readline
-#elif  USE_READLINE
-   ;import System.Console.Readline
-#endif
+import System.IO (hPutStrLn, openFile, hFlush, IOMode(AppendMode))
+--import Control.IO
 
 import GenUtil
 
 readLine :: String -> (String -> IO [String]) -> IO String
-#if !USE_EDITLINE && !USE_READLINE
+#if 1
 readLine s _ = do
     putStr s
     getLine
@@ -45,8 +36,6 @@ readLine prompt tabExpand =  do
         Just cs | all isSpace cs -> return ""
         Just s -> addHistory s >> return s
 #endif
-
---simpleCommand :: String -> IO (Maybe String)
 
 commands = [
     (":quit","quit interactive session"),

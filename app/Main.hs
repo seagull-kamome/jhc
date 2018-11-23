@@ -36,8 +36,8 @@ main = wrapMain $ do
         addAtExit dumpStringTableStats
         addAtExit dumpToFile
     let darg = progressM $ do
-        (argstring,_) <- getArgString
-        return (argstring ++ "\n" ++ versionSimple)
+          (argstring,_) <- getArgString
+          return (argstring ++ "\n" ++ versionSimple)
     case optMode options of
         BuildHl hl    -> darg >> buildLibrary processInitialHo processDecls hl
         ListLibraries -> listLibraries
@@ -77,7 +77,7 @@ processFiles cs = f cs (optMainFunc options) where
         _                   -> Left $ toModule f
 
 processCollectedHo cho = do
-    if optStop options == CompileHo then return () else do
+  if optStop options == CompileHo then return () else do
     putProgressLn "Collected Compilation..."
 
     when (dump FD.ClassSummary) $ do
@@ -100,9 +100,9 @@ processCollectedHo cho = do
     -- dump final version of various requested things
     wdump FD.Datatable $ putErrLn (render $ showDataTable dataTable)
     wdump FD.DatatableBuiltin $
-	putErrLn (render $ showDataTable samplePrimitiveDataTable)
+        putErrLn (render $ showDataTable samplePrimitiveDataTable)
     dumpRules (Rules $ fromList
-	[(combIdent x,combRules x) | x <- combinators, not $ null (combRules x)])
+        [(combIdent x,combRules x) | x <- combinators, not $ null (combRules x)])
 
     -- enter interactive mode
     int <- Interactive.isInteractive

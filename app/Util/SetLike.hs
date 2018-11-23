@@ -1,8 +1,11 @@
-{-# OPTIONS -XTypeFamilies #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveTraversable #-}
 module Util.SetLike where
 
 import Data.List(foldl')
 import Data.Monoid
+import Data.Maybe (fromMaybe)
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 import qualified Data.Set as S
@@ -142,10 +145,10 @@ type instance Key (M.Map k v) = k
 instance Ord k => SetLike (M.Map k v) where
     keys = M.keys
     member = M.member
-    sfilter f = M.filterWithKey (\ k v -> f (k,v))
+    sfilter f = M.filterWithKey (curry f)
     delete = M.delete
     insert (k,v) = M.insert k v
-    spartition f = M.partitionWithKey (\ k v -> f (k,v))
+    spartition f = M.partitionWithKey (curry f)
 
 type instance Value (M.Map k v) = v
 instance Ord k => MapLike (M.Map k v) where
@@ -162,12 +165,10 @@ msingleton k v = singleton (k,v)
 intersects x y = not $ isEmpty (x `intersection` y)
 
 findWithDefault :: MapLike m => Value m -> Key m -> m -> Value m
-findWithDefault d k m = case mlookup k m of
-    Nothing -> d
-    Just x -> x
+findWithDefault d k m = fromMaybe d $ mlookup k m
 
 newtype EnumSet a = EnumSet IS.IntSet
-    deriving(Monoid,IsEmpty,HasSize,Unionize,Eq,Ord)
+    deriving(Semigroup, Monoid,IsEmpty,HasSize,Unionize,Eq,Ord)
 
 type instance Elem (EnumSet a) = a
 type instance Key (EnumSet a) = a
@@ -187,7 +188,7 @@ instance Enum a => SetLike (EnumSet a) where
         (x,y) -> (EnumSet x,EnumSet y)
 
 newtype EnumMap k v = EnumMap (IM.IntMap v)
-    deriving(Monoid,IsEmpty,Functor,Foldable,Traversable,HasSize,Unionize,Eq,Ord)
+    deriving(Semigroup, Monoid,IsEmpty,Functor,Foldable,Traversable,HasSize,Unionize,Eq,Ord)
 
 type instance Elem (EnumMap k v) = (k,v)
 type instance Key (EnumMap k v) = k
@@ -218,7 +219,7 @@ class Intjection a where
     toIntjection :: Int -> a
 
 newtype IntjectionSet a = IntjectionSet IS.IntSet
-    deriving(Monoid,IsEmpty,HasSize,Unionize,Eq,Ord)
+    deriving(Semigroup, Monoid,IsEmpty,HasSize,Unionize,Eq,Ord)
 
 instance (Intjection a,Show a) => Show (IntjectionSet a) where
     showsPrec n is = showsPrec n $ toList is
@@ -241,7 +242,7 @@ instance Intjection a => SetLike (IntjectionSet a) where
         (x,y) -> (IntjectionSet x,IntjectionSet y)
 
 newtype IntjectionMap k v = IntjectionMap (IM.IntMap v)
-    deriving(Monoid,IsEmpty,Functor,Foldable,Traversable,HasSize,Unionize,Eq,Ord)
+    deriving(Semigroup, Monoid,IsEmpty,Functor,Foldable,Traversable,HasSize,Unionize,Eq,Ord)
 
 type instance Elem (IntjectionMap k v) = (k,v)
 type instance Key (IntjectionMap k v) = k

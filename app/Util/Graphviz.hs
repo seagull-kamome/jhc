@@ -4,7 +4,7 @@ module Util.Graphviz(
     mkDotGraph,mkDotGraph'
 ) where
 
-import List(intersperse)
+import Data.List(intersperse)
 
 data Orient = Portrait | Landscape deriving (Eq, Show)
 
@@ -19,9 +19,9 @@ i2d = fromInteger . toInteger
 
 sq :: String -> String
 sq ('"':s) | last s == '"'  = init s
-	   | otherwise	    = s
+	   | otherwise      = s
 sq ('\'':s) | last s == '\''	= init s
-	    | otherwise		= s
+	    | otherwise         = s
 sq s = s
 
 sl :: [(String,String)] -> String

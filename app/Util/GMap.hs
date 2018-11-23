@@ -1,4 +1,4 @@
-{-# OPTIONS -XTypeFamilies #-}
+{-# LANGUAGE TypeFamilies #-}
 module Util.GMap where
 
 import Data.Monoid
@@ -13,9 +13,9 @@ data family GMap k :: * -> *
 data family GSet k :: *
 
 newtype instance GMap Int v = GMapInt (IM.IntMap v)
-    deriving(Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike,MapLike)
+    deriving(Semigroup,Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike,MapLike)
 newtype instance GSet Int = GSetInt IS.IntSet
-    deriving(Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike)
+    deriving(Semigroup,Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike)
 
 instance Functor (GMap Int) where
     fmap f (GMapInt v) = GMapInt $ fmap f v
@@ -27,9 +27,9 @@ type instance Elem (GSet k) = k
 type instance Key (GSet k) = k
 
 newtype instance GSet Char = GSetChar (EnumSet Char)
-    deriving(Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike)
+    deriving(Semigroup, Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike)
 newtype instance GMap Char v = GMapChar (EnumMap Char v)
-    deriving(Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike,MapLike)
+    deriving(Semigroup, Monoid,IsEmpty,HasSize,Collection,Unionize,SetLike,MapLike)
 
 --newtype instance GSet (a,b) = GSetTup2 (GMap a (GSet b))
 

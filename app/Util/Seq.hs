@@ -10,8 +10,8 @@ module Util.Seq
 
 import Control.Applicative
 import Control.Monad
-import Data.Foldable(Foldable(..))
-import Data.Monoid(Monoid(..))
+import Data.Foldable (Foldable(..))
+import Data.Monoid (Monoid(..))
 import Data.Traversable(Traversable(..))
 
 newtype Seq a = Seq ([a] -> [a])
@@ -24,9 +24,6 @@ cons x (Seq f) = Seq (\ts -> x:f ts)
 
 snoc :: Seq a -> a ->  Seq a
 snoc (Seq f) x = Seq (\ts -> f (x:ts))
-
-toList :: Seq a -> [a]
-toList (Seq f) = f []
 
 appendToList :: Seq a -> [a] -> [a]
 appendToList (Seq f) xs = f xs
@@ -50,20 +47,25 @@ instance Monad Util.Seq.Seq where
 instance Applicative Seq where
     pure = return
     (<*>) = ap
+instance Alternative Seq where
+    empty = mempty
+    (<|>)  = mappend
+
 
 instance Traversable Seq where
     traverse f (Seq g) = fmap fromList (traverse f (g []))
 
 instance Foldable Util.Seq.Seq where
     foldMap f s = mconcat (map f (toList s))
+    toList (Seq f) = f []
 
 instance MonadPlus Util.Seq.Seq where
-    mplus = mappend
-    mzero = mempty
+    -- mplus = mappend
+    -- mzero = mempty
 
-instance Monoid (Seq a) where
-    mempty = Seq (\xs -> xs)
-    Seq f `mappend` Seq g = Seq (\xs -> f (g xs))
+instance Semigroup (Seq a) where Seq f <> Seq g = Seq (f . g)
+instance Monoid (Seq a) where mempty = Seq id
+    --Seq f `mappend` Seq g = Seq (\xs -> f (g xs))
 
 instance Show a => Show (Seq a) where
     showsPrec n s = showsPrec n (toList s)

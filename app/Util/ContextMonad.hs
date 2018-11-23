@@ -1,5 +1,6 @@
 module Util.ContextMonad where
 
+import Data.Functor
 import Control.Monad.Error
 
 class Monad m => ContextMonad m where
@@ -11,7 +12,7 @@ instance Error [String] where
     strMsg s = [s]
 
 newtype ContextEither a = ContextEither (Either [String] a)
-    deriving(Functor)
+    deriving(Functor, Applicative)
 
 runContextEither (ContextEither a) = a
 

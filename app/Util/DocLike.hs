@@ -5,8 +5,8 @@ module Util.DocLike(module Util.DocLike, module Data.Monoid) where
 import Control.Applicative
 import Data.Monoid(Monoid(..),(<>))
 import Data.Traversable as T
-import qualified Text.PrettyPrint.HughesPJ as P
-import qualified Text.PrettyPrint.Leijen as L
+-- import qualified Text.PrettyPrint.HughesPJ as P
+import qualified Text.PrettyPrint.ANSI.Leijen as L
 
 --infixr 5 <$> -- ,<//>,<$>,<$$>
 infixr 6 <+>, <->
@@ -104,9 +104,8 @@ punctuate p (d:ds)  = (d <-> p) : punctuate p ds
 newtype ShowSDoc = SD { unSD :: String -> String }
 showSD (SD s) = s ""
 
-instance Monoid ShowSDoc where
-    mempty = SD id
-    mappend (SD a) (SD b) = SD $ a . b
+instance Semigroup ShowSDoc where (<>) (SD a) (SD b) = SD $ a . b
+instance Monoid ShowSDoc where mempty = SD id
 
 instance (DocLike ShowSDoc) where
     char c = SD (c:)
@@ -115,12 +114,14 @@ instance (DocLike ShowSDoc) where
     x <-> y = mappend x y
     emptyDoc = mempty
 
+#if 0 /* unneccessary. maybe */
 instance (DocLike [Char]) where
     char c = [c]
     text s = s
     x <+> y = x ++ " " ++ y
     x <-> y = mappend x y
     emptyDoc = mempty
+#endif
 
 instance (DocLike a, Applicative m) => DocLike (m a) where
     emptyDoc = pure emptyDoc
@@ -141,7 +142,7 @@ instance (DocLike a, Applicative m) => DocLike (m a) where
 --     mappend = (P.<>)
 --     mempty = P.empty
 --     mconcat = P.hcat
-
+#if 0  /* Temporarily removed */
 instance DocLike P.Doc where
     emptyDoc = mempty
     text = P.text
@@ -157,7 +158,7 @@ instance DocLike P.Doc where
     fsep = P.fsep
     cat = P.cat
     sep = P.sep
-
+#endif
 instance DocLike L.Doc where
     emptyDoc = mempty
     text = L.text
@@ -173,10 +174,11 @@ instance DocLike L.Doc where
     cat = L.cat
     sep = L.sep
 
+#if 0   /* unneccessary. maybe */
 instance Monoid L.Doc where
     mempty = L.empty
     mappend = (L.<>)
     mconcat = L.hcat
-
+#endif
 
 

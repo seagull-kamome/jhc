@@ -21,6 +21,17 @@ description:         Please see the README on GitHub at <https://github.com/seag
 
 dependencies:
 - base >= 4.7 && < 5
+- bytestring
+- text
+- mtl
+- containers
+- ansi-wl-pprint
+- directory
+- unix
+- process
+- old-time
+- random
+- fgl
 
 #library:
 #  source-dirs: src
@@ -33,6 +44,18 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    default-extensions:
+    - CPP
+    - BangPatterns
+    - ViewPatterns
+    - GADTs
+    - TypeFamilies
+    - TypeOperators
+    - FlexibleInstances
+    - FlexibleContexts
+    - GeneralizedNewtypeDeriving
+    - MultiParamTypeClasses
+    - FunctionalDependencies
 #    dependencies:
 #    - jhc
 

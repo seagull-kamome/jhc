@@ -1,5 +1,8 @@
+{-# LANGUAGE UndecidableInstances #-}
 module Util.NameMonad(NameMonad(..),GenName(..),NameMT,runNameMT,runNameMT',freeNames,mixInt,mixInt3,hashInt) where
 
+import Data.Functor (Functor)
+import Control.Applicative (Applicative, Alternative)
 import Control.Monad.State
 import Data.Bits
 import Data.Word
@@ -37,6 +40,7 @@ instance GenName Int where
 freeNames :: (Ord n,GenName n) => Set.Set n -> [n]
 freeNames s  = filter (not . (`Set.member` s)) (genNames (Set.size s))
 
+{-
 instance (Monad m, Monad (t m), MonadTrans t, NameMonad n m) => NameMonad n (t m) where
     addNames n = lift $ addNames n
     addBoundNames n = lift $ addBoundNames n
@@ -45,10 +49,11 @@ instance (Monad m, Monad (t m), MonadTrans t, NameMonad n m) => NameMonad n (t m
     uniqueName y = lift $ uniqueName y
 
     --getNames = lift getNames
+-}
 
 -- | Name monad transformer.
 newtype NameMT n m a = NameMT (StateT (Set.Set n, Set.Set n) m a)
-    deriving(Monad, MonadTrans, Functor, MonadFix, MonadPlus, MonadIO)
+    deriving(Applicative, Monad, MonadTrans, Functor, MonadFix, Alternative, MonadPlus, MonadIO)
 
 -- | Run the name monad transformer.
 runNameMT :: (Monad m) => NameMT a1 m a -> m a

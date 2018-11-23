@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Util.BitSet(
     BitSet(),
     EnumBitSet(..),
@@ -17,10 +19,10 @@ import Util.HasSize
 newtype BitSet = BitSet Word
     deriving(Eq,Ord)
 
+instance Semigroup BitSet where (BitSet a) <> (BitSet b) = BitSet (a .|. b)
 instance Monoid BitSet where
     mempty = BitSet 0
-    mappend (BitSet a) (BitSet b) = BitSet (a .|. b)
-    mconcat ss = foldl' mappend mempty ss
+    mconcat = foldl' mappend mempty
 
 instance Unionize BitSet where
     BitSet a `difference` BitSet b = BitSet (a .&. complement b)
@@ -38,7 +40,7 @@ instance Collection BitSet where
 
 type instance Key BitSet = Elem BitSet
 instance SetLike BitSet where
-    keys bs = toList bs
+    keys = toList
     delete i (BitSet v) = BitSet (clearBit v i)
     member i (BitSet v) = testBit v i
     insert i (BitSet v) = BitSet (v .|. bit i)
@@ -92,7 +94,7 @@ instance Show BitSet where
     showsPrec n bs = showsPrec n (toList bs)
 
 newtype EnumBitSet a = EBS BitSet
-    deriving(Monoid,Unionize,HasSize,Eq,Ord,IsEmpty)
+    deriving(Semigroup, Monoid,Unionize,HasSize,Eq,Ord,IsEmpty)
 
 type instance Elem (EnumBitSet a) = a
 instance Enum a => Collection (EnumBitSet a) where

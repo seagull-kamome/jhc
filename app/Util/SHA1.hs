@@ -23,7 +23,7 @@ Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
 -}
 
-{-# OPTIONS -funbox-strict-fields -fglasgow-exts -fno-warn-name-shadowing -O2 #-}
+{-# OPTIONS -funbox-strict-fields -fno-warn-name-shadowing -O2 #-}
 
 module Util.SHA1 (sha1String,sha1file,sha1Bytes,hashToBytes,sha1Handle,ABCDE(..),Hash,emptyHash) where
 
@@ -33,7 +33,7 @@ import Data.Char (intToDigit,ord)
 import Foreign
 import Foreign.C
 import System.IO
-import System.IO.Unsafe (unsafePerformIO) as US
+import System.IO.Unsafe as US (unsafePerformIO)
 
 type Hash = ABCDE
 data ABCDE = ABCDE !Word32 !Word32 !Word32 !Word32 !Word32
@@ -63,14 +63,14 @@ sha1Bytes ss = US.unsafePerformIO $ do
     let len = length ss
         plen = sha1_step_1_2_plength len
     allocaBytes plen $ \ptr -> do
-    pokeArray ptr ss
-    let num_nuls = (55 - len) `mod` 64
-    pokeArray (advancePtr ptr len) ((128:replicate num_nuls 0)++(reverse $ size_split 8 (fromIntegral len*8)))
-    let abcde = sha1_step_3_init
-    let ptr' = castPtr ptr
-    unless big_endian $ fiddle_endianness ptr' plen
-    res <- sha1_step_4_main abcde ptr' plen
-    return res
+      pokeArray ptr ss
+      let num_nuls = (55 - len) `mod` 64
+      pokeArray (advancePtr ptr len) ((128:replicate num_nuls 0)++(reverse $ size_split 8 (fromIntegral len*8)))
+      let abcde = sha1_step_3_init
+      let ptr' = castPtr ptr
+      unless big_endian $ fiddle_endianness ptr' plen
+      res <- sha1_step_4_main abcde ptr' plen
+      return res
 
 
 {-# NOINLINE sha1Handle #-}
@@ -81,16 +81,16 @@ sha1Handle h = do
     len <- return $ fromIntegral len
     let plen = sha1_step_1_2_plength len
     allocaBytes plen $ \ptr -> do
-    cnt <- hGetBuf h ptr len
-    unless (cnt == len) $ fail "sha1File - read returned too few bytes"
-    hSeek h AbsoluteSeek 0
-    let num_nuls = (55 - len) `mod` 64
-    pokeArray (advancePtr ptr len) ((128:replicate num_nuls 0)++(reverse $ size_split 8 (fromIntegral len*8)))
-    let abcde = sha1_step_3_init
-    let ptr' = castPtr ptr
-    unless big_endian $ fiddle_endianness ptr' plen
-    res <- sha1_step_4_main abcde ptr' plen
-    return res
+      cnt <- hGetBuf h ptr len
+      unless (cnt == len) $ fail "sha1File - read returned too few bytes"
+      hSeek h AbsoluteSeek 0
+      let num_nuls = (55 - len) `mod` 64
+      pokeArray (advancePtr ptr len) ((128:replicate num_nuls 0)++(reverse $ size_split 8 (fromIntegral len*8)))
+      let abcde = sha1_step_3_init
+      let ptr' = castPtr ptr
+      unless big_endian $ fiddle_endianness ptr' plen
+      res <- sha1_step_4_main abcde ptr' plen
+      return res
 
 {-# NOINLINE sha1file #-}
 sha1file :: FilePath -> IO Hash

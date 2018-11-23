@@ -2,9 +2,12 @@ module Util.FilterInput (filterInput,readSystem) where
 
 import Control.Monad (when)
 import Data.List
-import System
+--import System
 import System.IO
-import System.Posix
+import System.Posix.Types
+import System.Posix.Process
+import System.Posix.IO
+import System.Exit
 import Text.Printf
 import Util.Gen
 import qualified Data.ByteString as BS

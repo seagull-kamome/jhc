@@ -26,9 +26,11 @@ import qualified Data.List as L
 newtype Histogram a = Histogram (Map.Map a Int)
     deriving(Show,Typeable)
 
+instance Ord a => Semigroup (Histogram a) where
+    (<>) (Histogram a) (Histogram b) = Histogram $ Map.unionWith (+) a b
 instance Ord a => Monoid (Histogram a) where
     mempty = Histogram Map.empty
-    mappend (Histogram a) (Histogram b) = Histogram $ Map.unionWith (+) a b
+    -- mappend (Histogram a) (Histogram b) = Histogram $ Map.unionWith (+) a b
 
 singleton :: a -> Histogram a
 singleton a = Histogram (Map.singleton a 1)

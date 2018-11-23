@@ -1,3 +1,13 @@
+module Util.ReaderWriter(ReaderWriter(), runReaderWriter) where
+
+import Control.Monad.RWS.Strict
+
+type ReaderWriter r w = RWS r w ()
+
+runReaderWriter :: ReaderWriter r w a -> r -> (a, w)
+runReaderWriter x r = evalRWS  x r ()
+
+#if 0
 {-# LANGUAGE UnboxedTuples #-}
 module Util.ReaderWriter(ReaderWriter(),runReaderWriter) where
 
@@ -36,3 +46,4 @@ instance (Monoid w) => MonadWriter w (ReaderWriter r w) where
 instance Monoid w => MonadReader r (ReaderWriter r w) where
 	ask       = ReaderWriter $ \r -> (# r, mempty #)
 	local f (ReaderWriter m) = ReaderWriter $ \r -> m (f r)
+#endif
