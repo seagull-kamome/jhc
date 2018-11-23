@@ -22,8 +22,8 @@ description:         Please see the README on GitHub at <https://github.com/seag
 dependencies:
 - base >= 4.7 && < 5
 
-library:
-  source-dirs: src
+#library:
+#  source-dirs: src
 
 executables:
   jhc-exe:
@@ -33,8 +33,8 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    dependencies:
-    - jhc
+#    dependencies:
+#    - jhc
 
 tests:
   jhc-test:
@@ -44,5 +44,5 @@ tests:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    dependencies:
-    - jhc
+#    dependencies:
+#    - jhc
