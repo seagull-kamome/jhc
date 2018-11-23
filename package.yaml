@@ -1,0 +1,48 @@
+name:                jhc
+version:             0.1.0.0
+github:              "seagull-kamome/jhc"
+license:             BSD3
+author:              "Hattori, Hiroki"
+maintainer:          "seagull.kamome@gmail.com"
+copyright:           "Copyright (C) 2018 Hattori, Hiroki. All Rights Reserved."
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+synopsis:            Haskell compiler
+category:            Compiler
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/seagull-kamome/jhc#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+
+library:
+  source-dirs: src
+
+executables:
+  jhc-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - jhc
+
+tests:
+  jhc-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - jhc
