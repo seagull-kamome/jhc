@@ -22,19 +22,23 @@ description:         Please see the README on GitHub at <https://github.com/seag
 dependencies:
 - base >= 4.7 && < 5
 - bytestring
+- utf8-string
 - text
 - mtl
 - containers
 - ansi-wl-pprint
+- pretty
 - directory
 - unix
 - process
 - old-time
 - random
+- binary
 - fgl
 
 #library:
 #  source-dirs: src
+
 
 executables:
   jhc-exe:
@@ -44,6 +48,8 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    include-dirs:
+    - app/StringTable
     default-extensions:
     - CPP
     - BangPatterns
@@ -54,8 +60,15 @@ executables:
     - FlexibleInstances
     - FlexibleContexts
     - GeneralizedNewtypeDeriving
+    - DeriveFunctor
+    - DeriveTraversable
+    - DeriveFoldable
+    - DeriveGeneric
+    - DeriveDataTypeable
     - MultiParamTypeClasses
     - FunctionalDependencies
+    - RecordWildCards
+    - NamedFieldPuns
 #    dependencies:
 #    - jhc
 
