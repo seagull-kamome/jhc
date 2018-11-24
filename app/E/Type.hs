@@ -8,11 +8,11 @@ import Text.PrettyPrint.ANSI.Leijen
 import C.Prims
 import Cmm.Number
 -- import Doc.DocLike hiding((<$>))
-import Info.Types
 import Name.Id
 import Name.Names
 import StringTable.Atom
 import Util.Gen
+import Info.Types
 import qualified Info.Info as Info
 
 {- @Internals

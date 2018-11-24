@@ -45,16 +45,20 @@ module Name.Name(
     ) where
 
 import C.FFI
-import Data.Char
+import Data.Char (isUpper, isAlpha, isAlphaNum, isDigit)
 -- import Doc.DocLike
 -- import Doc.PPrint
 import Text.PrettyPrint.ANSI.Leijen
+
+
 import GenUtil
 import Name.Internals
 import Name.Prim
 import StringTable.Atom
 import Ty.Level
 import Util.Std
+
+
 
 isTypeNamespace TypeConstructor = True
 isTypeNamespace ClassName = True
@@ -65,13 +69,16 @@ isValNamespace DataConstructor = True
 isValNamespace Val = True
 isValNamespace _ = False
 
+
+
 -----------------
 -- name definiton
 -----------------
 
 -- should only be used for printing, the parser should know when things are in
 -- operator position or not.
-isOpLike n  = x `elem` "!#$%&*+./<=>?@\\^-~:|" where
+isOpLike :: Name -> Bool
+isOpLike n  = x `elem` ("!#$%&*+./<=>?@\\^-~:|" :: String) where
     (_,_, x:_) = nameParts n
 
 createName :: NameType -> Module -> String -> Name
@@ -80,7 +87,7 @@ createName _ m "" = error $ "createName: empty ident " ++ show m
 createName t m i = forgeName t (Just m) i
 
 createUName :: NameType -> String -> Name
-createUName _ "" = error $ "createUName: empty ident"
+createUName _ "" = error "createUName: empty ident"
 createUName t i =  forgeName t Nothing i
 
 class ToName a where
@@ -114,7 +121,7 @@ instance ToName Name where
     fromName' n = n
 
 instance ToName String where
-    toName nt i = createUName nt i
+    toName = createUName
     fromName' n = case fromName' n of
             (Just (Module m),i) -> show m ++ "." ++ i
             (Nothing,i) -> i
@@ -144,9 +151,9 @@ setModule m n = toName nt (m,i) where
 
 parseName :: NameType -> String -> Name
 parseName t name = toName t (intercalate "." ms, intercalate "." (ns ++ [last sn])) where
-    sn = (split (== '.') name)
+    sn = split (== '.') name
     (ms,ns) = span validMod (init sn)
-    validMod (c:cs) = isUpper c && all (\c -> isAlphaNum c || c `elem` "_'") cs
+    validMod (c:cs) = isUpper c && all (\c -> isAlphaNum c || c `elem` ("_'" :: String) ) cs
     validMod _ = False
 
 nameType :: Name -> NameType
@@ -155,13 +162,12 @@ nameType name = snd $ nameToBits name
 instance Show Name where
     showsPrec _ n = f n where
         f (fromQuotedName -> Just n) = showChar '`' . f n
-        f (nameType -> UnknownType)  = showChar '¿' . (g $ nameParts n)
+        f (nameType -> UnknownType)  = showChar '¿' . g (nameParts n)
         f n = g $ nameParts n
         g (_,Just a,b) = shows a . showChar '.' . showString b
         g (_,Nothing,b) = showString b
 
-instance DocLike d => PPrint d Name  where
-    pprint n = text (show n)
+instance Pretty Name where pretty = text . show
 
 mapName :: (Module -> Module,String -> String) -> Name -> Name
 mapName (f,g) n = case nameParts n of
@@ -190,7 +196,7 @@ mkName l b mm s = toName (mkNameType l b) (mm,s)
 
 -- the left name effectively becomes the module.
 combineName :: Name -> Name -> Name
-combineName (nameToBits -> (a1,nt1)) (nameToBits -> (a2,nt2)) = bitsToName  ((toAtom $ "{" ++ encodeNameType nt1:show a1 ++ "}") `mappend` a2) nt2
+combineName (nameToBits -> (a1,nt1)) (nameToBits -> (a2,nt2)) = bitsToName (toAtom ("{" ++ encodeNameType nt1:show a1 ++ "}") `mappend` a2) nt2
 
 data NameParts = NameParts {
     nameLevel       :: TyLevel,
@@ -239,7 +245,7 @@ unMkName nm@(nameToBits -> (a1,nt1)) = NameParts { .. } where
 
 -- internal
 mkNameType :: TyLevel -> Bool -> NameType
-mkNameType l b = (f l b) where
+mkNameType = f where
     f l b   | l == termLevel = if b then DataConstructor else Val
             | l == typeLevel = if b then TypeConstructor else TypeVal
             | l == kindLevel && b = SortName
@@ -290,7 +296,7 @@ isConstructor n = f (nameType n) where
     f QuotedName = isConstructor $ fromJust (fromQuotedName n)
     f _ = False
 
-nameTyLevel_s tl n = nameTyLevel_u (const tl) n
+nameTyLevel_s tl = nameTyLevel_u (const tl)
 
 nameTyLevel_u f (fromQuotedName -> Just qn) = quoteName $ nameTyLevel_u f qn
 nameTyLevel_u f n = case getTyLevel n of

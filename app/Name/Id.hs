@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 module Name.Id(
     Id(),
     IdMap(),
@@ -37,6 +38,7 @@ module Name.Id(
 
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Applicative
 import Data.Bits
 import Data.Int
 import Data.Monoid
@@ -44,8 +46,9 @@ import qualified Data.Binary as B
 import qualified Data.IntMap  as IM
 import qualified Data.IntSet as IS
 
-import Doc.DocLike
-import Doc.PPrint
+import Text.PrettyPrint.ANSI.Leijen
+-- import Doc.DocLike
+-- import Doc.PPrint
 import Name.Name
 import Name.Internals
 import Util.HasSize
@@ -170,11 +173,11 @@ idMapToIdSet (IntjectionMap im)  = IntjectionSet $ IM.keysSet im
 
 -- | Name monad transformer.
 newtype IdNameT m a = IdNameT (StateT (IdSet, IdSet) m a)
-    deriving(Monad, MonadTrans, Functor, MonadFix, MonadPlus, MonadIO)
+    deriving(Applicative, Alternative, Monad, MonadTrans, Functor, MonadFix, MonadPlus, MonadIO)
 
 instance (MonadReader r m) => MonadReader r (IdNameT m) where
-	ask       = lift ask
-	local f (IdNameT m) = IdNameT $ local f m
+  ask = lift ask
+  local f (IdNameT m) = IdNameT $ local f m
 
 -- | Run the name monad transformer.
 runIdNameT :: (Monad m) => IdNameT m a -> m (a,IdSet)
@@ -231,11 +234,11 @@ instance Show Id where
         showsPrec _ (Id 0) =  showChar '_'
         showsPrec _ (Id x) =  maybe (showString ('x':show (x `div` 2))) shows (fromId $ Id x)
 
-instance Show IdSet where
-    showsPrec n is = showsPrec n (idSetToList is)
+-- instance Show IdSet where
+--    showsPrec n is = showsPrec n (idSetToList is)
 
-instance Show v => Show (IdMap v) where
-    showsPrec n is = showsPrec n (idMapToList is)
+-- instance Show v => Show (IdMap v) where
+--     showsPrec n is = showsPrec n (idMapToList is)
 
 anonymousIds :: [Id]
 anonymousIds = map anonymous [1 .. ]
@@ -289,8 +292,9 @@ fromId (Id i) = case intToName i of
     Just a -> return a
     Nothing -> fail $ "Name.fromId: not a name " ++ show (Id i)
 
-instance DocLike d => PPrint d Id where
-    pprint x = tshow x
+instance Pretty Id where pretty = text . show
+-- instance DocLike d => PPrint d Id where
+--     pprint x = tshow x
 
 instance GenName Id where
     genNames = candidateIds

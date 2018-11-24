@@ -28,6 +28,7 @@ dependencies:
 - containers
 - ansi-wl-pprint
 - pretty
+- filepath
 - directory
 - unix
 - process
