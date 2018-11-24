@@ -1,5 +1,6 @@
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 module C.Generate(
     Annotate(..),
     Structure(..),
@@ -74,6 +75,8 @@ module C.Generate(
     ) where
 
 import Data.Char
+import Data.String
+import Data.List (sortBy)
 import Control.Monad
 import Control.Monad.RWS(RWS,MonadState(..),MonadWriter(..),MonadReader(..),runRWS,asks,MonadFix(..))
 import Control.Monad.Writer(censor, runWriter)
@@ -89,10 +92,8 @@ import qualified Data.Traversable as Seq
 
 import Text.PrettyPrint.ANSI.Leijen (Doc, empty, char, text, nest, (<+>), (<$$>), vcat, semi, lbrace, rbrace, tupled, equals, parens, brackets, hsep)
 import Util.Gen
-import Util.SetLike
 
-
-
+-- ---------------------------------------------------------------------------
 data Env = Env {
     envUsedLabels :: Set.Set Name,
     envInScope    :: Set.Set Name
@@ -105,11 +106,8 @@ emptyEnv = Env { envUsedLabels = mempty, envInScope = mempty }
 newtype G a = G (RWS Env [(Name,Type)] (Int,Map.Map [Type] Name) a)
     deriving(Functor, Applicative, Monad,MonadWriter [(Name,Type)],MonadState (Int,Map.Map [Type] Name),MonadReader Env,MonadFix)
 
-newtype Name = Name String
-    deriving(Eq,Ord)
-
-instance Show Name where
-    show (Name n) = n
+newtype Name = Name String deriving(Eq,Ord)
+instance Show Name where show (Name n) = n
 
 data TypeHint = TypeHint {
     thPtr :: !Bool,
@@ -118,14 +116,13 @@ data TypeHint = TypeHint {
     thOmittable :: !Bool
     }
 
+typeHint = TypeHint { thPtr = False, thConst = False, thNoAssign = False, thOmittable = False }
 hintConst = typeHint { thConst = True, thOmittable = True }
 hintPtr   = typeHint { thPtr = True }
 
-typeHint = TypeHint { thPtr = False, thConst = False, thNoAssign = False, thOmittable = False }
 
 data Expression = Exp TypeHint E
 
-newtype Statement = St (Seq.Seq Stmt)
 
 data Stmt =
     SD (G Doc)
@@ -135,10 +132,12 @@ data Stmt =
     | SBlock Statement
     | SIf Expression Statement Statement
     | SSwitch Expression [(Maybe Constant,Statement)]
-
+newtype Statement = St (Seq.Seq Stmt)
 newtype Constant = C (G Doc)
 
-sd :: (G Doc) -> Stmt
+
+
+sd :: (G Doc) -> Statement
 sd x = stmt (SD x)
 
 stmt :: Stmt -> Statement
@@ -163,7 +162,13 @@ data Type = TB String Bool | TPtr Type | TAnon [Type] | TNStruct Name | TFunPtr 
 
 data E = ED (G Doc) | EP E | EE
 
-terr s = text "/* ERROR: " <> text s <> text " */"
+
+terr :: String -> G Doc
+terr s = return $ "/* ERROR: " <> text s <> " */"
+
+terrstr :: String -> String
+terrstr s = "/* ERROR: " <> s <> " */"
+
 
 class Draw d where
     draw :: d -> G Doc
@@ -173,19 +178,19 @@ class Draw d where
     err s = error s
 
 instance Draw Statement where
-    draw (St ss) = vcat (map draw $ Seq.toList ss)
+    draw (St ss) = pure vcat <*> mapM draw (Seq.toList ss)
     err s = sd $ terr s
 
 instance Draw Stmt where
     err s = SD (terr s)
 
     draw (SD g) = g
-    draw (SReturn e) | isEmptyExpression e = text "return;"
-    draw (SReturn e) = text "return " <> draw e <> char ';'
+    draw (SReturn e) | isEmptyExpression e = return $ text "return;"
+    draw (SReturn e) = do { e' <- draw e; return $ text "return " <> e' <> char ';' }
     draw (SLabel n@(Name s)) = do
         ls <- asks envUsedLabels
-        if n `member` ls then  text s <> char ':' <> char ';' else return mempty
-    draw (SGoto (Name s)) = text "goto" <+> text s <> char ';'
+        return $ if n `Set.member` ls then  text s <> char ':' <> char ';' else mempty
+    draw (SGoto (Name s)) = return $ text "goto" <+> text s <> char ';'
     draw (SBlock s) = do
         s <- subBlockBody s
         return $ vcat [char '{', nest 4 s, char '}']
@@ -194,10 +199,14 @@ instance Draw Stmt where
         thn <- subBlockBody thn
         els <- subBlockBody els
         return $ text "if" <+> parens exp <+> lbrace <$$> nest 4 thn <$$> rbrace <+> text "else" <+> lbrace <$$> nest 4 els <$$> rbrace
-    draw (SSwitch e ts) = text "switch" <+> parens (draw e) <+> char '{' <$$> vcat (map sc ts) <$$> md <$$>  char '}' where
-        sc (Just x,ss) = do ss <- draw (SBlock ss); x <- draw x; return $ text "case" <+> x <> char ':' <$$> nest 4 (ss <$$> text "break;")
-        sc (Nothing,ss) = do ss <- draw (SBlock ss); return $ text "default:"  <$$>  ( nest 4 ss <$$> text "break;")
-        md = if any isNothing (fsts ts) then empty else text "default: jhc_case_fell_off(__LINE__);"
+    draw (SSwitch e ts) = do
+        e' <- draw e
+        ts' <- mapM sc ts
+        return $ text "switch" <+> parens e' <+> char '{' <$$> vcat ts' <$$> md <$$>  char '}'
+      where
+        sc (Just x,ss) = do { ss <- draw (SBlock ss); x <- draw x; return $ text "case" <+> x <> char ':' <$$> nest 4 (ss <$$> text "break;") }
+        sc (Nothing,ss) = do { ss <- draw (SBlock ss); return $ text "default:"  <$$>  ( nest 4 ss <$$> text "break;") }
+        md = if any isNothing (map fst ts) then empty else text "default: jhc_case_fell_off(__LINE__);"
 
 --subBlockBody s = draw s
 subBlockBody s = do
@@ -213,10 +222,10 @@ subBlockBody s = do
 instance Draw E where
     draw (ED g) = g
     draw (EP e) = draw e
-    draw EE = empty
+    draw EE = return empty
     pdraw (ED g) = g
-    pdraw (EP e) = parens (draw e)
-    pdraw EE = empty
+    pdraw (EP e) = pure parens <*> draw e
+    pdraw EE = return empty
     err s = ED $ terr s
 
 instance Draw Expression where
@@ -225,61 +234,88 @@ instance Draw Expression where
     err s = (Exp typeHint (err s))
 
 instance Draw Name where
-    draw (Name s) = text s
-    err s = Name $ terr s
+    draw (Name s) = return $ text s
+    err s = Name $ terrstr s
 
 instance Draw Constant where
     draw (C x) = x
     err s = C $ terr s
 
 instance Draw Type where
-    draw (TB x _) = text x
-    draw (TPtr x) = draw x <> char '*'
+    draw (TB x _) = return $ text x
+    draw (TPtr x) = do { x' <- draw x; return $ x' <> char '*' }
     draw (TAnon ts) = do
         (n,mp) <- get
         case Map.lookup ts mp of
-            Just x -> text "struct" <+> draw x
+            Just x -> do { x' <- draw x; return $ text "struct" <+> x' }
             Nothing -> do
                 let nm = name ("tup" ++ show n)
-                put (n + 1,Map.insert ts nm mp)
-                text "struct" <+> draw nm
-    draw (TNStruct n) = text "struct" <+> draw n
-    draw (TFunPtr r as) = draw r <+> text "(*)" <> tupled (map draw as)
+                put (n + 1, Map.insert ts nm mp)
+                nm' <- draw nm
+                return $ text "struct" <+> nm'
+    draw (TNStruct n) = do { n' <- draw n; return $ text "struct" <+> n' }
+    draw (TFunPtr r as) = do
+      r' <- draw r
+      as' <- mapM draw as
+      return $ r' <+> text "(*)" <> tupled as'
 
-    err s = TB (terr s) False
+    err s = TB (terrstr s) False
 
 -- expressions
 sizeof :: Type -> Expression
-sizeof t = expC (text "sizeof" <> parens $ draw t)
+sizeof t = expC $ do
+  t' <- draw t
+  return $ text "sizeof" <> parens t'
 
 cast :: Type -> Expression -> Expression
-cast t e = expDC (parens (draw t) <> pdraw e)
+cast t e = expDC $ do
+  t' <- draw t
+  e' <- pdraw e
+  return $ parens t' <> e'
 
-functionCall' fe es = expD (draw fe <> tupled (map draw es))
+functionCall' :: Draw a => a -> [Expression] -> Expression
+functionCall' fe es = expD $ do
+  fe' <- draw fe
+  es' <- mapM draw es
+  return $ fe' <> tupled es'
 
 functionCall :: Name -> [Expression] -> Expression
 functionCall = functionCall'
 
 indirectFunctionCall :: Expression -> [Expression] -> Expression
-indirectFunctionCall e = functionCall' (expD (parens (draw e)))
+indirectFunctionCall e = functionCall' (expD $ pure parens <*> draw e)
 
 dereference :: Expression -> Expression
-dereference x = expDC $ char '*' <> pdraw x
+dereference x = expDC $ do
+  x' <- pdraw x
+  return $ char '*' <> x'
 
 noAssign :: Expression -> Expression
 noAssign (Exp th v) = Exp th { thNoAssign = True } v
 
 reference :: Expression -> Expression
-reference x = expDC $ char '&' <> pdraw x
+reference x = expDC $ do
+  x' <- pdraw x;
+  return $ char '&' <> x'
+
 
 indexArray :: Expression -> Expression -> Expression
-indexArray w i = expDO (pdraw w <> brackets (pdraw i))
+indexArray w i = expDO $ do 
+  w' <- pdraw w
+  i' <- pdraw i
+  return $ w' <> brackets i'
 
 project :: Name -> Expression -> Expression
-project n e = expDO (pdraw e <> char '.' <> draw n)
+project n e = expDO $ do
+  e' <- pdraw e
+  n' <- draw n
+  return $ e' <> char '.' <> n'
 
 project' :: Name -> Expression -> Expression
-project' n e = expDO (pdraw e <> text "->" <> draw n)
+project' n e = expDO $ do
+  e' <- pdraw e
+  n' <- draw n
+  return $ e' <> text "->" <> n'
 
 projectAnon :: Int -> Expression -> Expression
 projectAnon n e = project (Name $ 't':show n) e
@@ -295,9 +331,10 @@ localVariable t n = expD $ do
 statementOOB :: Statement -> Statement
 statementOOB s = (sd $ draw s >> return empty)
 
+instance Semigroup Statement where
+    (St as) <> (St bs) = St $ pairOpt stmtPairOpt as bs
 instance Monoid Statement where
     mempty = St mempty
-    mappend (St as) (St bs) = St $ pairOpt stmtPairOpt as bs
 
 stmtPairOpt a b = f a b where
     f (SGoto l) y@(SLabel l')
@@ -319,7 +356,7 @@ pairOpt peep as bs = f as bs where
 
 emptyExpression = Exp typeHint EE
 
-expressionRaw s = expD $ text s
+expressionRaw s = expD $ return $ text s
 
 isEmptyExpression (Exp _ EE) = True
 isEmptyExpression _ = False
@@ -341,23 +378,31 @@ structAnon es = Exp typeHint $ ED $ do
     (n,mp) <- get
     put (n + 1,mp)
     let nm = name ("_t" ++ show n)
-        lv = localVariable (anonStructType (snds es)) nm
-    draw $ commaExpression $ [operator "=" (projectAnon i lv) e | e <- fsts es | i <- [0..] ] ++ [lv]
+        lv = localVariable (anonStructType (map snd es)) nm
+    draw $ commaExpression $ [operator "=" (projectAnon i lv) e | e <- map fst es | i <- [0..] ] ++ [lv]
 
 operator :: (ToExpression a,ToExpression b) => String -> a -> b -> Expression
-operator o x y = expDC (pdraw (toExpression x) <+> text o <+> pdraw (toExpression y))
+-- operator o x y = expDC (pdraw (toExpression x) <+> text o <+> pdraw (toExpression y))
+operator o x y = expDC $ do
+  xx <- pdraw $ toExpression x
+  yy <- pdraw $ toExpression y
+  return $ xx <+> text o <+> yy
+
+
 
 uoperator :: String -> Expression -> Expression
-uoperator o x = expDC (text o <> pdraw x)
+uoperator o x = expDC $ do { xx <- pdraw x; return $ text o <> xx }
 
 constant :: Constant -> Expression
 constant c = expD (draw c)
 
 string :: String -> Expression
-string s = Exp hintPtr (ED (return $ text (show s))) -- TODO, use C quoting conventions
+string s = Exp hintPtr $ ED $ return $ text $ show s -- TODO, use C quoting conventions
 
-nullPtr = Exp hintPtr (ED $ text "NULL")
+nullPtr :: Expression
+nullPtr = Exp hintPtr $ ED $ return $ text "NULL"
 
+name :: String -> Name
 name = Name
 
 expDO x = Exp typeHint { thOmittable = True } (ED x)
@@ -370,21 +415,21 @@ enum :: Name -> Constant
 enum n = C (draw n)
 
 number :: Integer -> Constant
-number i = C (text $ show i)
+number i = C $ return $ text $ show i
 
 floating :: Double -> Constant
-floating i = C (text $ show i)
+floating i = C $ return $ text $ show i
 
 character :: Char -> Constant
-character c = C (text $ show c)
+character c = C $ return $ text $ show c
 
-cTrue = C (text "true")
-cFalse = C (text "false")
+cTrue = C $ return $ text "true"
+cFalse = C $ return $ text "false"
 
 -- statements
 expr :: Expression -> Statement
 expr e | isEmptyExpression e = mempty
-expr e = sd $ draw e <> char ';'
+expr e = sd $ do { x <- draw e; return $ x <> char ';' }
 
 creturn :: Expression -> Statement
 creturn e = stmt $ SReturn e
@@ -472,7 +517,7 @@ drawFunction :: Function -> G (Doc,Doc)
 drawFunction f = do
     frt <- draw (functionReturnType f)
     cenv <- ask
-    let env = cenv { envUsedLabels = ul, envInScope = Set.fromList $ fsts (functionArgs f) } where
+    let env = cenv { envUsedLabels = ul, envInScope = Set.fromList $ map fst (functionArgs f) } where
         ul = Set.fromList $ Seq.toList $ Seq.foldMap (travCollect stmtMapStmt g) stseq
         St stseq = functionBody f
         g (SGoto n) = Seq.singleton n
@@ -480,7 +525,7 @@ drawFunction f = do
         vcmp (n,t@(TB _ b)) = (not b,n)
         vcmp (n,t) = (True,n)
     (body,uv) <- local (const env) $ listen (draw (functionBody f))
-    uv' <- forM [ (x,t) | (x,t) <- snubUnder vcmp uv, x `notElem` fsts (functionArgs f)] $ \ (n,t) -> do
+    uv' <- forM [ (x,t) | (x,t) <- snubUnder vcmp uv, x `notElem` (map fst (functionArgs f))] $ \ (n,t) -> do
         t <- draw t
         return $ t <+> text (show n) <> semi
     name <- draw (functionName f)
@@ -528,7 +573,7 @@ class Annotate e where
 
 instance Annotate Statement where
     --annotate c s@(SD si _) = SD si ((text "/* " <> text c <> text " */") <$> draw s)
-    annotate c s = sd (text "/* " <> text c <> text " */") `mappend` s
+    annotate c s = sd (return $ text "/* " <> text c <> text " */") `mappend` s
 
 mangleIdent xs = f xs where
     f (x:xs) | isAlphaNum x = x:f xs
@@ -605,7 +650,8 @@ generateC fs ss = ans where
         let tsort [] = []
             tsort (t:ts) | structureHasDiscriminator s = t:rsort ts
                          | otherwise = rsort (t:ts)
-            rsort = sortUnder (cmp . snd)
+            rsort = sortBy (\x y -> (cmp . snd) x `compare` (cmp . snd) y)
+            --rsort = sortUnder (cmp . snd)
             numGC = length [ () | (_,TB _ True) <- ts ]
             ppri = if numGC /= 0 then 2 else 5
             -- pointers first, garbage collected, then rest
@@ -650,14 +696,18 @@ infix 2 =*
 (=*) :: (ToExpression x, ToExpression y) => x -> y -> Statement
 x =* y = toExpression x `assign` toExpression y
 
+
+-- --------------------------------------------------------------------------
+
 class ToStatement a  where
     toStatement :: a -> Statement
 
 instance ToStatement Statement where
     toStatement x = x
 
-instance ToStatement Expression where
-    toStatement x = expr x
+
+-- instance ToStatement Expression where -- OVERLAPPING
+--     toStatement x = expr x
 
 class ToExpression a where
     toExpression :: a -> Expression

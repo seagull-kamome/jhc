@@ -46,8 +46,9 @@ module Name.Name(
 
 import C.FFI
 import Data.Char
-import Doc.DocLike
-import Doc.PPrint
+-- import Doc.DocLike
+-- import Doc.PPrint
+import Text.PrettyPrint.ANSI.Leijen
 import GenUtil
 import Name.Internals
 import Name.Prim
@@ -71,7 +72,7 @@ isValNamespace _ = False
 -- should only be used for printing, the parser should know when things are in
 -- operator position or not.
 isOpLike n  = x `elem` "!#$%&*+./<=>?@\\^-~:|" where
-    (_,_,(x:_)) = nameParts n
+    (_,_, x:_) = nameParts n
 
 createName :: NameType -> Module -> String -> Name
 createName _ (Module "") i = error $ "createName: empty module " ++ i
