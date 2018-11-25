@@ -25,7 +25,7 @@ Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
 {-# OPTIONS -funbox-strict-fields -fno-warn-name-shadowing -O2 #-}
 
-module Util.SHA1 (sha1String,sha1file,sha1Bytes,hashToBytes,sha1Handle,ABCDE(..),Hash,emptyHash) where
+module Util.SHA1 {-# DEPRECATED "DON'T USE" #-} (sha1String,sha1file,sha1Bytes,hashToBytes,sha1Handle,ABCDE(..),Hash,emptyHash) where
 
 
 import Control.Monad (unless)

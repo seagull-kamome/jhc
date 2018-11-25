@@ -57,6 +57,7 @@ executables:
     - BangPatterns
     - ViewPatterns
     - GADTs
+    - RankNTypes
     - TypeFamilies
     - TypeOperators
     - FlexibleInstances
@@ -71,6 +72,7 @@ executables:
     - FunctionalDependencies
     - RecordWildCards
     - NamedFieldPuns
+    - ScopedTypeVariables
 #    dependencies:
 #    - jhc
 

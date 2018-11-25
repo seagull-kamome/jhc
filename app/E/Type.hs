@@ -1,9 +1,12 @@
 -- | The definitions related to jhc core
 module E.Type where
 
+import Data.List (intersperse)
 import Data.Foldable hiding(concat)
 import Data.Traversable
+
 import Text.PrettyPrint.ANSI.Leijen
+import Data.Binary
 
 import C.Prims
 import Cmm.Number
@@ -14,6 +17,8 @@ import StringTable.Atom
 import Util.Gen
 import Info.Types
 import qualified Info.Info as Info
+import Info.Binary (putInfo, getInfo)
+
 
 {- @Internals
 
@@ -57,17 +62,12 @@ data Comb = Comb {
     }
 
 instance HasProperties Comb where
-    modifyProperties f comb = combHead_u (modifyProperties f) comb
-    getProperties comb      = getProperties $ combHead comb
-    putProperties p comb    = combHead_u (putProperties p) comb
+    modifyProperties f = combHead_u (modifyProperties f)
+    getProperties      = getProperties . combHead
+    putProperties p    = combHead_u (putProperties p)
 
-instance HasProperties TVr where
-    modifyProperties f = tvrInfo_u (modifyProperties f)
-    getProperties      = getProperties . tvrInfo
-    putProperties prop = tvrInfo_u (putProperties prop)
-
-combBody_u f r@Comb{combBody  = x} = r{combBody = f x}
-combHead_u f r@Comb{combHead  = x} = r{combHead = f x}
+combBody_u f r@Comb{combBody  = x} = r {combBody = f x}
+combHead_u f r@Comb{combHead  = x} = r {combHead = f x}
 combRules_u f r@Comb{combRules  = x} = cp r{combRules = fx} where
     cp = if null fx then unsetProperty PROP_HASRULE else setProperty PROP_HASRULE
     fx = f x
@@ -170,7 +170,18 @@ instance Show ESort where
 
 instance (Show e,Show t) => Show (Lit e t) where
     showsPrec p (LitInt x t) = showParen (p > 10) $  shows x <> showString "::" <> shows t
-    showsPrec p LitCons { litName = n, litArgs = es, litType = t } = showParen (p > 10) $ hsep (shows n:map (showsPrec 11) es) <> showString "::" <> shows t
+    showsPrec p LitCons {..} =
+      showParen (p > 10) $ (mconcat (intersperse (showChar ' ') (shows litName:map (showsPrec 11) litArgs))) <> showString "::" <> shows litType
+
+
+
+
+-- --------------------------------------------------------------------------
+--
+
+type TVr = TVr' E
+data TVr' e = TVr { tvrIdent :: !Id, tvrType :: e, tvrInfo :: !Info.Info }
+    deriving(Functor,Foldable,Traversable)
 
 instance Show a => Show (TVr' a) where
     showsPrec n TVr { tvrIdent = eid, tvrType = e} | eid == emptyId = showParen (n > 10) $ showString "_::" . shows e
@@ -178,10 +189,36 @@ instance Show a => Show (TVr' a) where
         Just n -> shows n . showString "::" . shows e
         Nothing  -> shows x . showString "::" . shows e
 
-type TVr = TVr' E
-data TVr' e = TVr { tvrIdent :: !Id, tvrType :: e, tvrInfo :: !Info.Info }
-    deriving(Functor,Foldable,Traversable)
-        {-!derive: update !-}
+instance Binary TVr where
+  put TVr {..} = put tvrIdent >> put tvrType >> putInfo tvrInfo
+  get = pure TVr <*> get <*> get <*> getInfo
+
+instance HasProperties TVr where
+    modifyProperties f = tvrInfo_u (modifyProperties f)
+    getProperties      = getProperties . tvrInfo
+    putProperties prop = tvrInfo_u (putProperties prop)
+
+
+-- --------------------------------------------------------------------------
+
+tvrIdent_u :: (Id -> Id) -> TVr' e -> TVr' e
+tvrIdent_u f x = x { tvrIdent = f (tvrIdent x) }
+tvrIdent_s :: Id -> TVr' e -> TVr' e
+tvrIdent_s y x = x { tvrIdent = y }
+
+tvrType_u :: (e -> e) -> TVr' e -> TVr' e
+tvrType_u f x = x { tvrType = f (tvrType x) }
+tvrType_s :: e -> TVr' e -> TVr' e
+tvrType_s y x = x { tvrType = y }
+
+
+tvrInfo_u :: (Info.Info -> Info.Info) -> TVr' e -> TVr' e
+tvrInfo_u f x = x { tvrInfo = f (tvrInfo x) }
+tvrInfo_s :: Info.Info -> TVr' e -> TVr' e
+tvrInfo_s y x = x { tvrInfo = y }
+
+
+
 
 data Alt e = Alt (Lit TVr e) e
     deriving(Eq,Ord)

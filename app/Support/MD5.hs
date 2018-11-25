@@ -1,5 +1,5 @@
 {-# OPTIONS -funbox-strict-fields  -O2 #-}
-module Support.MD5(
+module Support.MD5 {-# DEPRECATED "DON'T USE" #-} (
     Hash(), emptyHash, md5,md5file,md5lazy,md5lazyIO,
     md5show32,md5Bytes,md5String,md5Handle,hashToBytes) where
 

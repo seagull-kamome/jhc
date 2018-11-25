@@ -7,17 +7,6 @@ import Name.Binary()
 import Support.MapBinaryInstance
 import {-# SOURCE #-} Info.Binary(putInfo,getInfo)
 
-instance Binary TVr where
-    put TVr { tvrIdent = eid, tvrType =  e, tvrInfo = nf} = do
-        put eid
-        put e
-        putInfo nf
-    get  = do
-        x <- get
-        e <- get
-        nf <- getInfo
-        return $ TVr x e nf
-
 instance Data.Binary.Binary RuleType where
     put RuleSpecialization = do
 	    Data.Binary.putWord8 0
@@ -46,25 +35,13 @@ instance Data.Binary.Binary Rule where
 	    Data.Binary.put af
 	    Data.Binary.put ag
 	    Data.Binary.put ah
-    get = do
-    aa <- get
-    ab <- getList
-    ac <- getList
-    ad <- fromIntegral `fmap` getLEB128
-    ae <- get
-    af <- get
-    ag <- get
-    ah <- get
-    return (Rule aa ab ac ad ae af ag ah)
+    get = pure Rule <*> get <*> getList <*> getList <*> fmap fromIntegral getLEB128 <*> get <*> get <*> get <*> get
 
 instance Data.Binary.Binary ARules where
     put (ARules aa ab) = do
 	    Data.Binary.put aa
 	    putList ab
-    get = do
-    aa <- get
-    ab <- getList
-    return (ARules aa ab)
+    get = pure ARules <*> get <*> getList
 
 instance (Data.Binary.Binary e,
 	  Data.Binary.Binary t) => Data.Binary.Binary (Lit e t) where
@@ -81,10 +58,10 @@ instance (Data.Binary.Binary e,
     get = do
 	    h <- Data.Binary.getWord8
 	    case h of
-	      0 -> do
-		    aa <- Data.Binary.get
-		    ab <- Data.Binary.get
-		    return (LitInt aa ab)
+	      0 -> pure LitInt <*> get <*> get
+		    -- aa <- Data.Binary.get
+		    -- ab <- Data.Binary.get
+		    -- return (LitInt aa ab)
 	      1 -> do
 		    ac <- Data.Binary.get
 		    ad <- getList
@@ -224,10 +201,6 @@ instance Data.Binary.Binary E where
 	      _ -> fail "invalid binary data found"
 
 instance (Data.Binary.Binary e) => Data.Binary.Binary (Alt e) where
-    put (Alt aa ab) = do
-	    Data.Binary.put aa
-	    Data.Binary.put ab
-    get = do
-    aa <- get
-    ab <- get
-    return (Alt aa ab)
+    put (Alt aa ab) = pur aa >> put bb
+    get = pure Alt <*> get <*> get
+
