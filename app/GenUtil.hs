@@ -115,9 +115,6 @@ module GenUtil(
     mapMsnd,
     mapMfst,
     iocatch,
-
-    -- * Classes
-    UniqueProducer(..)
     ) where
 
 import Data.Char(isAlphaNum, isSpace, toLower, ord, chr)
@@ -306,12 +303,6 @@ liftT3 (f,g,h) (x,y,z) = (f x, g y, h z)
 -- | apply functions to values inside a tupele. 'liftT3' and 'liftT4' also exist.
 liftT2 :: (a -> b, c -> d) -> (a,c) -> (b,d)
 liftT2 (f,g) (x,y) = (f x, g y)
-
--- | class for monads which can generate
--- unique values.
-class Monad m => UniqueProducer m where
-    -- | produce a new unique value
-    newUniq :: m Int
 
 rtup a b = (b,a)
 triple a b c = (a,b,c)

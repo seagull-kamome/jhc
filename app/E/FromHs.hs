@@ -60,6 +60,8 @@ import qualified FrontEnd.Tc.Type as T(Rule(..))
 import qualified FrontEnd.Tc.Type as Type
 import qualified Info.Info as Info
 
+import Control.Monad.Fresh
+
 ump sl e = EError (show sl ++ ": Unmatched pattern") e
 
 r_bits32       = ELit litCons { litName = rt_bits32, litType = eHash }
@@ -77,11 +79,11 @@ createIfv v e a b = res where
 
 ifzh e a b = eCase e [Alt lTruezh a, Alt lFalsezh b] Unknown
 
-newVars :: UniqueProducer m => [E] -> m [TVr]
+newVars :: MonadFresh m => [E] -> m [TVr]
 newVars xs = f xs [] where
     f [] xs = return $ reverse xs
     f (x:xs) ys = do
-        s <- newUniq
+        s <- fresh
         f xs (tVr (anonymous s) x:ys)
 
 tipe t = f t where
@@ -324,11 +326,8 @@ instance MonadSrcLoc C where
 instance MonadSetSrcLoc C where
     withSrcLoc' sl = local (\ce -> ce { ceSrcLoc = sl })
 
-instance UniqueProducer C where
-    newUniq = do
-        i <- get
-        put $! (i + 1)
-        return i
+instance MonadFresh C where
+    fresh = do { i <- get; put $! (i + 1); return i }
 
 instance DataTableMonad C where
     getDataTable = asks ceDataTable

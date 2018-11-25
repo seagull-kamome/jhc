@@ -37,8 +37,12 @@ dependencies:
 - binary
 - fgl
 
-#library:
-#  source-dirs: src
+library:
+  source-dirs: src
+  default-extensions:
+  - MultiParamTypeClasses
+  - FlexibleInstances
+  - GeneralizedNewtypeDeriving
 
 
 executables:
@@ -73,8 +77,8 @@ executables:
     - RecordWildCards
     - NamedFieldPuns
     - ScopedTypeVariables
-#    dependencies:
-#    - jhc
+    dependencies:
+    - jhc
 
 tests:
   jhc-test:
@@ -84,5 +88,5 @@ tests:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-#    dependencies:
-#    - jhc
+    dependencies:
+    - jhc

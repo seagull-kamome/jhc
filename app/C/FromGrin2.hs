@@ -34,9 +34,10 @@ import Support.CanType
 import Support.FreeVars
 import Util.Gen
 import Util.SetLike
-import Util.UniqueMonad
 import qualified Cmm.Op as Op
 import qualified FlagOpts as FO
+
+import Control.Monad.Fresh
 
 ---------------
 -- C Monad
@@ -74,11 +75,11 @@ data Env = Env {
 rEMap_u f r@Env{rEMap  = x} = r{rEMap = f x}
 rInscope_u f r@Env{rInscope  = x} = r{rInscope = f x}
 
-newtype C a = C (RWST Env Written HcHash Uniq a)
-    deriving(Monad,UniqueProducer,MonadState HcHash,MonadWriter Written,MonadReader Env,Functor)
+newtype C a = C (RWST Env Written HcHash Fresh a)
+    deriving(Monad,FreshMonad,MonadState HcHash,MonadWriter Written,MonadReader Env,Functor)
 
 runC :: Grin -> C a -> ((a,HcHash,Written),Map.Map Atom TyRep)
-runC grin (C m) =  (execUniq1 (runRWST m startEnv emptyHcHash),ityrep) where
+runC grin (C m) =  (execFresh (runRWST m startEnv emptyHcHash) 1,ityrep) where
     TyEnv tmap = grinTypeEnv grin
     ityrep = Map.mapMaybeWithKey tyRep (fromDistinctAscList $ Util.SetLike.toList tmap)
     startEnv = Env {
@@ -330,7 +331,7 @@ iDeclare action = local (\e -> e { rDeclare = True }) action
 
 convertBody :: Exp -> C Statement
 convertBody Let { expDefs = defs, expBody = body } = do
-    u <- newUniq
+    u <- fresh
     nn <- flip mapM defs $ \FuncDef { funcDefName = name, funcDefBody = as :-> _ } -> do
         vs' <- mapM convertVal as
         let nm = (toName (show name ++ "_" ++ show u))

@@ -28,7 +28,8 @@ import Support.FreeVars
 import Util.Graph as G
 import Util.HasSize
 import Util.SetLike hiding(Value)
-import Util.UniqueMonad
+
+import Control.Monad.Fresh
 
 annotateId mn x = case fromId x of
     Just y -> toId (toName Val (mn,'f':show y))
@@ -173,7 +174,7 @@ lambdaLift prog@Program { progDataTable = dataTable, progCombinators = cs } = do
     statRef <- newIORef mempty
     let z comb  = do
             (n,as,v) <- return $ combTriple comb
-            let ((v',(cs',rm)),stat) = runReader (runStatT $ execUniqT 1 $ runWriterT (f v)) S { funcName = mkFuncName (tvrIdent n), topVars = wp,isStrict = True, declEnv = [] }
+            let ((v',(cs',rm)),stat) = runReader (runStatT $ (flip execFreshT 1) $ runWriterT (f v)) S { funcName = mkFuncName (tvrIdent n), topVars = wp,isStrict = True, declEnv = [] }
             modifyIORef statRef (mappend stat)
             modifyIORef fc (\xs -> combTriple_s (n,as,v') comb:cs' ++ xs)
             modifyIORef fm (rm `mappend`)
@@ -290,7 +291,7 @@ lambdaLift prog@Program { progDataTable = dataTable, progCombinators = cs } = do
             return ntvr
         globalName tvr = return tvr
         newName tt = do
-            un <-  newUniq
+            un <- fresh
             n <- asks funcName
             return $ tVr (toId $ mapName (id,(++ ('$':show un))) n) tt
         doBigLift e fs  dr = do

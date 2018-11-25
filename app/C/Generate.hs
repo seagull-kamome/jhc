@@ -91,6 +91,9 @@ import qualified Data.Set as Set
 import qualified Data.Traversable as Seq
 
 import Text.PrettyPrint.ANSI.Leijen (Doc, empty, char, text, nest, (<+>), (<$$>), vcat, semi, lbrace, rbrace, tupled, equals, parens, brackets, hsep)
+
+import Control.Monad.Fresh
+
 import Util.Gen
 
 -- ---------------------------------------------------------------------------
@@ -447,14 +450,16 @@ goto n = stmt $ SGoto n
 
 massign a b = if isEmptyExpression b then toStatement a else assign a b
 
+newTmpVar :: MonadFresh m => Type -> Expression -> m (Statement, Expression)
 newTmpVar t e = do
-    u <- newUniq
+    u <- fresh
     let n = name $ 'x':show u
         d = sd $ do
             va <- draw (variable n `massign` e)
             t <- draw t
             return $ t <+> va
     return (d,variable n)
+
 
 newAssignVar t n e = do
     let d = sd $ do
@@ -463,13 +468,17 @@ newAssignVar t n e = do
             return $ t <+> va
     return d
 
+
+newVar :: MonadFresh m => Type ->  m Expression
 newVar t = do
-    u <- newUniq
+    u <- fresh
     let n = name $ 'x':show u
     return (localVariable t n)
 
+
+newDeclVar :: MonadFresh m => Type -> m (Statement, Expression)
 newDeclVar t = do
-    u <- newUniq
+    u <- fresh
     let n = name $ 'x':show u
     return (sd (tell [(n,t)] >> return mempty),variable n)
 

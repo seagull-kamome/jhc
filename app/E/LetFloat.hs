@@ -31,9 +31,10 @@ import Stats
 import Support.CanType
 import Support.FreeVars
 import Util.SetLike
-import Util.UniqueMonad()
 import qualified Info.Info as Info
 import qualified Util.Graph as G
+
+import Control.Monad.Fresh
 
 atomizeApps ::
     Bool          -- ^ whether to atomize type arguments
@@ -272,7 +273,7 @@ floatOutward prog = do
                 cDefs e = (e,[])
             flip mapM_ (fsts $ fs'') $ \t -> do
                 mtick $ "LetFloat.Full-Lazy.top_level.{" ++ maybeShowName t
-            u <- newUniq
+            u <- fresh
             let (fs''',sm') = unzip [ ((n,sm e),(t,EVar n)) | (t,e) <- fs'', let n = nn t ]
                 sm = substLet sm'
                 nn tvr = tvr { tvrIdent = toId $ lfName u (progModule prog) Val (tvrIdent tvr) }
@@ -316,7 +317,7 @@ letBindAll  dataTable modName e = f e  where
     g e | notFloatOut e = return e
     g e | isUnboxed (getType e) = return e
     g e = do
-        u <- newUniq
+        u <- fresh
         let n = toName Val (show modName,"af@" ++ show u)
             tv = tvr { tvrIdent = toId n, tvrType = infertype dataTable e }
         e' <- f e
