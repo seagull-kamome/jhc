@@ -1,108 +1,80 @@
 -- straightforward linear time solver for boolean constraints.
-
+{-# LANGUAGE MultiWayIf #-}
 module Util.BooleanSolver(
     CA(),
     CV(..),
+    C(),
     fromCA,
     readValue,
     groundConstraints,
     processConstraints,
-    C(),
     Result(..),
     mkCA,
     equals,
     implies
-
     )where
 
-import Monad
+import Control.Monad
 import Data.IORef
 import Control.Monad.Trans
-import Util.UnionFind
 import Data.List(intersperse)
 import Data.Monoid
 import Data.Typeable
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+
+--import Util.UnionFind
 import Util.UnionFind as UF
-import Data.FunctorM
+-- import Data.FunctorM
 
+-- ---------------------------------------------------------------------------
 
-
-type Seq x = [x] -> [x]
-
-newtype C v = C (Seq (CL v))
-    deriving(Monoid)
-
-
-instance Functor C where
-    fmap f (C v) = C (map (fmap f) (v []) ++)
-
-data CV v = CFalse | CTrue | CJust v
-    deriving(Eq,Ord,Typeable)
-
-
-
-data CL v = CV v `Cimplies` CV v
-    deriving(Eq,Ord)
-
-instance (Show l) => Show (C l) where
-    showsPrec _ (C xs) = showString "(" . foldr (.) id (intersperse (showString ",") (map shows (xs []))) . showString ")"
-
-instance Functor CL where
-    fmap f (x `Cimplies` y) = fmap f x `Cimplies` fmap f y
-
-instance FunctorM CL where
-    fmapM f (x `Cimplies` y) = return Cimplies `ap` (fmapM f x) `ap` (fmapM f y)
-
-
+data CV v = CFalse | CTrue | CJust v deriving(Eq, Ord)
 instance Functor CV where
-    fmap f (CJust x) = CJust (f x)
-    fmap _ CTrue = CTrue
-    fmap _ CFalse = CFalse
-
-instance FunctorM CV where
-    fmapM f (CJust x) = liftM CJust (f x)
-    fmapM _ CTrue = return CTrue
-    fmapM _ CFalse = return CFalse
-
-
-
+  fmap f (CJust x) = CJust (f x)
+  fmap _ x = x
 instance Show v => Show (CV v) where
-    showsPrec n (CJust v) = showsPrec n v
-    showsPrec _ CTrue = showString "T"
-    showsPrec _ CFalse = showString "F"
+  show (CJust v) = show v
+  show CTrue ="T"
+  show CFalse = "F"
 
 
 
+-- ---------------------------------------------------------------------------
+
+data CL v = CV v `Cimplies` CV v deriving(Eq, Ord)
+instance Functor CL where
+  fmap f (x `Cimplies` y) = fmap f x `Cimplies` fmap f y
+instance Show e => Show (CL e) where
+  show (CJust x `Cimplies` CJust y) = "(" ++ show x ++ " -> " ++ show y ++ ")"
+  show (CTrue `Cimplies` CJust y) = "(" ++ show y ++ " := T)"
+  show (CJust x `Cimplies` CFalse) = "(" ++ show x ++ " := F)"
+  show (x `Cimplies` y) = "(" ++ show x ++ " -> " ++ show y ++ ")"
 
 
-instance (Show e) => Show (CL e) where
-    showsPrec d (CJust x `Cimplies` CJust y) = showParen (d > 9) $ showsPrec 10 x . showString " -> " . showsPrec 10 y
-    showsPrec d (CTrue `Cimplies` CJust y) = showParen (d > 9) $ showsPrec 10 y . showString " := T"
-    showsPrec d (CJust x `Cimplies` CFalse) = showParen (d > 9) $ showsPrec 10 x . showString " := F"
-    showsPrec d (x `Cimplies` y) = showParen (d > 9) $ showsPrec 10 x . showString " -> " . showsPrec 10 y
+-- ---------------------------------------------------------------------------
 
-
-
--- basic constraints
+newtype C v = C [CL v] deriving (Semigroup, Monoid, Functor)
+instance Show l => Show (C l) where
+  show (C xs) = "(" ++  intercalate "," (map show l) ++ ")"
 
 implies,equals :: CV v -> CV v -> C v
-implies x y = C ((x `Cimplies` y):)
-equals x y = (x `implies` y) `mappend` (y `implies` x)
+implies x y = C [x `Cimplies` y]
+equals x y = C [x `Cimplies` y, y `Cimplies` x]
 
+
+-- ---------------------------------------------------------------------------
 
 -- a variable is either set to a value or bounded by other values
 data Ri a = Ri (Set.Set (RS a))  (Set.Set (RS a))
-
 type R a = CV (Ri a)
-
 type RS a = (Element (R a) a)
-
 newtype CA v = CA (RS v)
 
 fromCA :: CA v -> v
 fromCA (CA e) = fromElement e
+
+
 
 readValue :: MonadIO m => CA v -> m (Result (CA v))
 readValue (CA v) = liftIO $ do
@@ -154,12 +126,10 @@ processConstraints propagateSets (C cs) = mapM_ prule (cs []) where
     prule (CTrue `Cimplies` CFalse) = fail "invalid constraint: T -> F"
     prule (CTrue `Cimplies` CJust (CA y)) = find y >>= set Nothing True
     prule (CJust (CA x) `Cimplies` CFalse) = find x >>= set Nothing False
-    prule (CJust (CA x) `Cimplies` CJust (CA y)) | x == y = return ()
-    prule (CJust (CA x) `Cimplies` CJust (CA y)) = do x <- find x; y <- find y; pimp x y
+    prule (CJust (CA x) `Cimplies` CJust (CA y)) = whrn (x /= y) pure pimp <*> find x <*> find y
     pimp' :: (MonadIO m,Show a) => RS a -> RS a -> m ()
     pimp' x y = do x <- find x; y <- find y; pimp x y
-    pimp x y | x == y = return ()
-    pimp x y = do
+    pimp x y = when (x /= y) $ do
         xv <- getW x
         yv <- getW y
         case (xv,yv) of
@@ -184,15 +154,17 @@ processConstraints propagateSets (C cs) = mapM_ prule (cs []) where
     implies xe ye ra rb = do
         ra@(Ri xl xh) <- findRi xe ra
         rb@(Ri yl yh) <- findRi ye rb
-        if xe `Set.member` yh then liftIO $ equals xe ye ra rb else do
-        if xe `Set.member` yl then return () else do
-        if ye `Set.member` xl then liftIO $ equals xe ye ra rb else do
-        if ye `Set.member` xh then return () else do
-        putW xe (CJust $ Ri xl (Set.insert ye xh))
-        putW ye (CJust $ Ri (Set.insert xe yl) yh)
-        when propagateSets $ mapM_ (pimp' xe) (Set.toList yh)
-        when propagateSets $ mapM_ (flip pimp' ye) (Set.toList xl)
-        return ()
+        if
+          | xe `Set.member` yh -> liftIO $ equals xe ye ra rb
+          | xe `Set.member` yl -> return ()
+          | ye `Set.member` xl -> liftIO $ equals xe ye ra rb
+          | ye `Set.member` xh -> return ()
+          | otherwise -> do
+              putW xe (CJust $ Ri xl (Set.insert ye xh))
+              putW ye (CJust $ Ri (Set.insert xe yl) yh)
+              when propagateSets $ mapM_ (pimp' xe) (Set.toList yh)
+              when propagateSets $ mapM_ (flip pimp' ye) (Set.toList xl)
+              return ()
     findRi x (Ri l h) = do
         l <- liftM Set.fromList (mapM find (Set.toList l))
         h <- liftM Set.fromList (mapM find (Set.toList h))

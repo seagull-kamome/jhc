@@ -14,21 +14,19 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.UTF8 as BS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Text.PrettyPrint.HughesPJ as P
+
+import Text.PrettyPrint.ANSI.Leijen as P
 
 import C.FFI
 import C.Generate
 import C.Prims
 import Cmm.Number
-import Doc.DocLike
-import Doc.PPrint
 import Grin.Grin
 import Grin.HashConst
 import Grin.Noodle
 import Grin.Show()
 import Grin.Val
 import Options
-import PackedString
 import StringTable.Atom
 import Support.CanType
 import Support.FreeVars
