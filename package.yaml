@@ -36,6 +36,7 @@ dependencies:
 - random
 - binary
 - fgl
+- containers-missing
 
 library:
   source-dirs: src
