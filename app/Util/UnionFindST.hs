@@ -17,19 +17,17 @@ import Control.Monad.ST
 import Data.STRef
 
 -- ---------------------------------------------------------------------------
---
 
 data Element s w a = Element a !Int {-# UNPACK #-} !(STRef s (Link s w a))
-
-fromElement :: Element s w a -> a
-fromElement (Element a _ _) = a
-
 instance Eq (Element s w a) where
   Element _ x _ == Element _ y _ = x == y
 instance Ord (Element s w a) where
   Element _ x _ `compare` Element _ y _ = x `compare` y
 instance Show a => Show (Element s w a) where
     show = show . fromElement
+
+fromElement :: Element s w a -> a
+fromElement (Element a _ _) = a
 
 
 -- ---------------------------------------------------------------------------
