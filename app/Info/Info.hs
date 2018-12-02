@@ -39,6 +39,14 @@ instance Semigroup Info where
   (Info ap as) <> (Info bp bs) = Info (ap <> bp) (Map.union as bs)
 instance Monoid Info where mempty = Info Prop.empty Map.empty
 
+-- | Info has properties
+instance Prop.HasProperties Info where
+  getProperties = infoProperties
+  {-# INLINE getProperties #-}
+  modifyProperties f x = x { infoProperties = f $ infoProperties x }
+  {-# INLINE modifyProperties #-}
+
+
 
 -- | Construction
 

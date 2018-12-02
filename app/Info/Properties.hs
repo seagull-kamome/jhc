@@ -1,5 +1,6 @@
 module Info.Properties (
   Property (..), readProp, PropertySet,
+  HasProperties (..),
   --
   EBS.empty,
   EBS.insert, EBS.delete,
@@ -18,7 +19,6 @@ data Property
   | PROP_SPECIALIZATION | PROP_SRCLOC_ANNOTATE_FUN | PROP_SUPERSPECIALIZE
   | PROP_UNSHARED | PROP_WHNF | PROP_WORKER | PROP_WRAPPER | PROP_HASRULE
     deriving(Eq, Ord, Enum, Bounded)
-type PropertySet = EBS.EnumBitSet32 Property
 
 readProp :: Monad m => String -> m Property
 readProp "INLINE" = return PROP_INLINE
@@ -32,5 +32,22 @@ readProp "COLD" = return PROP_COLD
 readProp p = fail $ "Invalid Property: " ++ p
 
 -- ---------------------------------------------------------------------------
+type PropertySet = EBS.EnumBitSet32 Property
+
+class HasProperties a where
+  getProperties :: a -> PropertySet
+  modifyProperties :: (PropertySet -> PropertySet) -> a -> a
+  --
+  insertProperty :: Property -> a -> a
+  insertProperty x = modifyProperties (const $ EBS.singleton x)
+  {-# INLINE insertProperty #-}
+  --
+  deleteProperty :: Property -> a -> a
+  deleteProperty x = modifyProperties (EBS.delete x)
+  {-# INLINE deleteProperty #-}
+  --
+  memberProperty :: Property -> a -> Bool
+  memberProperty x = EBS.member x . getProperties
+  {-# INLINE memberProperty #-}
 
 
