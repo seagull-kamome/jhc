@@ -9,9 +9,65 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified FlagOpts as FO
 
+
+data KnownExtension
+    = M4
+    | UnboxedValues
+    | Haskell2010
+    | Haskell98
+-- imported from ghc simply to provide better warnings.
+    | AllowAmbiguousTypes | Arrows | AutoDeriveTypeable | BangPatterns | CApiFFI
+    | CPP | ConstrainedClassMethods | ConstraintKinds | DataKinds
+    | DatatypeContexts | DefaultSignatures | DeriveDataTypeable | DeriveFoldable
+    | DeriveFunctor | DeriveGeneric | DeriveTraversable
+    | DisambiguateRecordFields | DoAndIfThenElse | DoRec | EmptyCase
+    | EmptyDataDecls | ExistentialQuantification | ExplicitForAll
+    | ExplicitNamespaces | ExtendedDefaultRules | ExtensibleRecords
+    | FlexibleContexts | FlexibleInstances | ForeignFunctionInterface
+    | FunctionalDependencies | GADTSyntax | GADTs | GHCForeignImportPrim
+    | GeneralizedNewtypeDeriving | Generics | HereDocuments | ImplicitParams
+    | ImplicitPrelude | ImpredicativeTypes | IncoherentInstances | InstanceSigs
+    | InterruptibleFFI | KindSignatures | LambdaCase | LiberalTypeSynonyms
+    | MagicHash | MonadComprehensions | MonoLocalBinds | MonoPatBinds
+    | MonomorphismRestriction | MultiParamTypeClasses | MultiWayIf
+    | NPlusKPatterns | NamedFieldPuns | NegativeLiterals | NewQualifiedOperators
+    | NondecreasingIndentation | NullaryTypeClasses | NumDecimals
+    | OverlappingInstances | OverloadedLists | OverloadedStrings
+    | PackageImports | ParallelArrays | ParallelListComp | PatternGuards
+    | PatternSignatures | PolyKinds | PolymorphicComponents | PostfixOperators
+    | QuasiQuotes | Rank2Types | RankNTypes | RebindableSyntax | RecordPuns
+    | RecordWildCards | RecursiveDo | RegularPatterns | RelaxedPolyRec
+    | RestrictedTypeSynonyms | RoleAnnotations | Safe | SafeImports
+    | ScopedTypeVariables | StandaloneDeriving | TemplateHaskell
+    | TraditionalRecordSyntax | TransformListComp | Trustworthy | TupleSections
+    | TypeFamilies | TypeOperators | TypeSynonymInstances | UnboxedTuples
+    | UndecidableInstances | UnicodeSyntax | UnliftedFFITypes | Unsafe
+    | ViewPatterns | XmlSyntax
+  deriving (Show, Read, Eq, Ord)
+
+
+alwaysOn :: Set.Set KnownExtension
+alwaysOn = Set.fromList
+    [EmptyDataDecls
+    ,NPlusKPatterns
+    ,NamedFieldPuns
+    ,KindSignatures
+    ,LiberalTypeSynonyms
+    ,NondecreasingIndentation
+    ,RecordPuns
+    ,DeriveDataTypeable
+    ,StandaloneDeriving
+    ,TraditionalRecordSyntax
+    ,TypeOperators
+    ,TypeSynonymInstances]
+
+
+
+
 {-# NOINLINE processLanguageFlags #-}
 processLanguageFlags :: [String] -> Set.Set FO.Flag -> (Set.Set FO.Flag,[String])
 processLanguageFlags xs opt = f xs opt [] where
+    f :: [String] -> Set.Set FO.Flag -> [String] -> (Set.Set FO.Flag, [String])
     f [] opt rs = (opt,reverse rs)
     f (('N':'o':ls):xs) opt rs | Just o <- readM ls = g True o xs opt rs
     f (ls:xs) opt rs | Just o <- readM ls = g False o xs opt rs
@@ -76,20 +132,6 @@ langMap = Map.fromList
     x =+> y = (x,(Set.fromList y,False))  -- maps to set of flags
     x =-+> y = (x,(Set.fromList y,True))  -- erases all previous set flags
 
-alwaysOn = Set.fromList
-    [EmptyDataDecls
-    ,NPlusKPatterns
-    ,NamedFieldPuns
-    ,KindSignatures
-    ,LiberalTypeSynonyms
-    ,NondecreasingIndentation
-    ,RecordPuns
-    ,DeriveDataTypeable
-    ,StandaloneDeriving
-    ,TraditionalRecordSyntax
-    ,TypeOperators
-    ,TypeSynonymInstances]
-
 
 {-# NOINLINE generateJhcParams #-}
 generateJhcParams :: BS8.ByteString
@@ -97,38 +139,5 @@ generateJhcParams = BS8.pack $ unlines $ ["#ifndef _JHC_EXT_DEFS" ,"#define _JHC
     ++ map f (sort $ Set.toList alwaysOn ++  Map.keys langMap) ++ ["#endif"] where
         f x = "#define HS_EXT_" ++ show x ++ " 1"
 
-data KnownExtension
-    = M4
-    | UnboxedValues
-    | Haskell2010
-    | Haskell98
 
--- imported from ghc simply to provide better warnings.
-    | AllowAmbiguousTypes | Arrows | AutoDeriveTypeable | BangPatterns | CApiFFI
-    | CPP | ConstrainedClassMethods | ConstraintKinds | DataKinds
-    | DatatypeContexts | DefaultSignatures | DeriveDataTypeable | DeriveFoldable
-    | DeriveFunctor | DeriveGeneric | DeriveTraversable
-    | DisambiguateRecordFields | DoAndIfThenElse | DoRec | EmptyCase
-    | EmptyDataDecls | ExistentialQuantification | ExplicitForAll
-    | ExplicitNamespaces | ExtendedDefaultRules | ExtensibleRecords
-    | FlexibleContexts | FlexibleInstances | ForeignFunctionInterface
-    | FunctionalDependencies | GADTSyntax | GADTs | GHCForeignImportPrim
-    | GeneralizedNewtypeDeriving | Generics | HereDocuments | ImplicitParams
-    | ImplicitPrelude | ImpredicativeTypes | IncoherentInstances | InstanceSigs
-    | InterruptibleFFI | KindSignatures | LambdaCase | LiberalTypeSynonyms
-    | MagicHash | MonadComprehensions | MonoLocalBinds | MonoPatBinds
-    | MonomorphismRestriction | MultiParamTypeClasses | MultiWayIf
-    | NPlusKPatterns | NamedFieldPuns | NegativeLiterals | NewQualifiedOperators
-    | NondecreasingIndentation | NullaryTypeClasses | NumDecimals
-    | OverlappingInstances | OverloadedLists | OverloadedStrings
-    | PackageImports | ParallelArrays | ParallelListComp | PatternGuards
-    | PatternSignatures | PolyKinds | PolymorphicComponents | PostfixOperators
-    | QuasiQuotes | Rank2Types | RankNTypes | RebindableSyntax | RecordPuns
-    | RecordWildCards | RecursiveDo | RegularPatterns | RelaxedPolyRec
-    | RestrictedTypeSynonyms | RoleAnnotations | Safe | SafeImports
-    | ScopedTypeVariables | StandaloneDeriving | TemplateHaskell
-    | TraditionalRecordSyntax | TransformListComp | Trustworthy | TupleSections
-    | TypeFamilies | TypeOperators | TypeSynonymInstances | UnboxedTuples
-    | UndecidableInstances | UnicodeSyntax | UnliftedFFITypes | Unsafe
-    | ViewPatterns | XmlSyntax
-  deriving (Show, Read, Eq, Ord)
+

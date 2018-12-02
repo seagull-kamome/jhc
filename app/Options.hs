@@ -203,8 +203,8 @@ processOptions = do
             snd <$> readYamlOpts o fp
     o <- foldM readYaml o (optWith o)
     case optMode o of
-        ShowHelp  | optVerbose o > 0  -> putStrLn prettyOptions >> exitSuccess
-        ShowHelp    -> doShowHelp
+        -- ShowHelp  | optVerbose o > 0  -> putStrLn prettyOptions >> exitSuccess
+        ShowHelp    -> putStrLn helpUsage >> exitSuccess
         Version   | optVerbose o > 0  -> putStrLn (versionString ++ BS.toString versionContext) >> exitSuccess
         Version     -> putStrLn versionString >> exitSuccess
         PrintHscOptions -> do
@@ -238,9 +238,6 @@ processOptions = do
         ShowConfig  -> doShowConfig fopt
         _ -> return fopt
 
-doShowHelp = do
-    putStrLn helpUsage
-    exitSuccess
 
 findHoCache :: IO (Maybe FilePath)
 findHoCache = do

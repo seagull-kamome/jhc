@@ -5,13 +5,15 @@ module Options.Type(
     helpUsage,
     -- optFOptsSet_u,
     -- prettyOptions,
-    emptyOpt,
+    -- emptyOpt,
     postProcessFD
     ,postProcessFO
     ,fileOptions) where
 
 import Data.List(intercalate)
 import System.Console.GetOpt
+
+import Data.Default
 
 import Options.Map
 -- import Util.DocLike
@@ -144,7 +146,8 @@ data Opt = Opt {
     optFOptsSet    ::  S.Set FO.Flag     -- ^ Flag options (-f\<opt\>).
   }
 
-emptyOpt = Opt {
+instance Default Opt where
+  def = Opt {
     optMode        = CompileExe,
     optColumns     = 80,
     optCross       = False,

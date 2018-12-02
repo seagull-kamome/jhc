@@ -151,13 +151,6 @@ data E = EAp E E
 	deriving(Eq, Ord)
     {-! derive: is, from !-}
 
---instance Functor (Lit e) where
---    fmap f x = runIdentity $ fmapM (return . f) x
-
---instance FunctorM (Lit e) where
---    fmapM f x = case x of
---        LitCons { litName = a, litArgs = es, litType = e, litAliasFor = af } -> do  e <- f e; return LitCons { litName = a, litArgs = es, litType = e, litAliasFor = af }
---        LitInt i t -> do t <- f t; return $ LitInt i t
 
 instance Show ESort where
     showsPrec _ EStar          = showString "*"

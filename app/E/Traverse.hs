@@ -41,6 +41,9 @@ emapE' f = emapEG f return
 
 emapEG f g e = emapEGH f g g e
 
+
+
+
 -- map subexpressions
 -- emapEGH f g h
 -- f - applied to direct subexpressions
@@ -159,25 +162,23 @@ renameE initSet initMap e = runReader (runIdNameT $ addBoundNamesIdMap initMap >
         e' <- localSubst n (f e)
         return $ elam tv' e'
 
-scopeCheck :: Monad m => Bool -> IdMap TVr -> E -> m ()
-scopeCheck checkFvs initMap e = runReaderT (f e) initMap  where
-    f (ELam tvr e) = f (tvrType tvr) >> local (minsert (tvrIdent tvr) tvr) (f e)
-    f (EPi tvr e) = f (tvrType tvr) >> local (minsert (tvrIdent tvr) tvr) (f e)
-    f (EVar t) = do
-        m <- ask
-        case mlookup (tvrIdent t) m of
-            Nothing | checkFvs -> fail $ "scopeCheck: found variable not in scope " ++ tvrShowName t
-            Just t' | tvrType t /= tvrType t' -> fail $ "scopeCheck: found variable whose type does not match " ++ tvrShowName t
-            _ -> return ()
-    f ec@ECase { eCaseBind = b } = do
-        f (eCaseScrutinee ec)
-        f (eCaseType ec)
-        f (tvrType b)
-        local (minsert (tvrIdent b) b) $ mapM_ doAlt (eCaseAlts ec)
-    f ELetRec { eDefs = ds, eBody = e } = do
-        mapM_ (f . tvrType . fst) ds
-        local (fromList [ (tvrIdent t,t) | (t,_) <- ds ] `mappend`) (f e)
-    f e = emapE_ f e
-    doAlt (Alt LitCons { litArgs = xs, litType = t } e) = do
-        f t >> local (fromList [ (tvrIdent t,t) | t <- xs] `mappend`) (f e)
-    doAlt (Alt (LitInt _ t) e) = f t >> f e
+
+
+
+scopeCheck :: Bool -> IdMap TVr -> E -> Maybe String
+scopeCheck checkfvs = go where
+  g tvr vars = minsert (tvrIndent tvr) tvr vars
+  go vars (ELam tvr e) = go vars (rvtType tvr) <|> go (g tvr) e
+  go vars (EPi tvr e) = go vars (tvrType tvr) <|>  go (g tvr) e
+  go vars (EVar t) =
+    case mlookup (tvrIdent t) m of
+      Nothing | checkfvs -> Just $ "scopeCheck: found variable not in scope " ++ tvrShowName t
+      Just t' | tvrType t /= tvrType t' -> Just $ "scopeCheck: found variable whose type does not match " ++ tvrShowName t
+      _ -> Nothing
+  go vars ec@(ECase {..}) = go vars eCaseStrutinee <|> go vars eCaseType <|> go vars (tvrType eCaseBind) <|> asum (map (doalt vars) eCaseAlts)
+    where doalt vars (Alt (LitCons {..} e)) = go vars t <|> go (fromList [ (tvrIdent t, t) | t <- litArgs ] `mappend` vars) e
+          doalt vars (Alt (LitInt _ t) e) = go vars t <|> go vars e
+  go vars (ELetRec {..}) = asum (map (go vars . tvrType . fst) eDefs <|> go (fromList [ (tvrIdent t, t) | (t, _) <- eDefs] `mappend` vars) e
+  go vars e = emapE_ (go vars) e
+
+

@@ -37,6 +37,7 @@ dependencies:
 - binary
 - fgl
 - containers-missing
+- data-default
 
 library:
   source-dirs: src
