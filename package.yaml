@@ -38,6 +38,7 @@ dependencies:
 - fgl
 - containers-missing
 - data-default
+- intern
 
 library:
   source-dirs: src
@@ -64,6 +65,7 @@ executables:
     - ViewPatterns
     - GADTs
     - RankNTypes
+    - DataKinds
     - TypeFamilies
     - TypeOperators
     - FlexibleInstances
@@ -74,13 +76,19 @@ executables:
     - DeriveFoldable
     - DeriveGeneric
     - DeriveDataTypeable
+    - StandaloneDeriving
     - MultiParamTypeClasses
     - FunctionalDependencies
     - RecordWildCards
     - NamedFieldPuns
     - ScopedTypeVariables
+    - LambdaCase
+    - MultiWayIf
+    - TupleSections
+    - BinaryLiterals
     dependencies:
     - jhc
+    - binary
 
 tests:
   jhc-test:

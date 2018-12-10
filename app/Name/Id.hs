@@ -1,319 +1,243 @@
-{-# LANGUAGE UndecidableInstances #-}
-module Name.Id(
-    Id(),
-    IdMap(),
-    IdNameT(),
-    IdSet(),
-    anonymous,
-    va1,va2,va3,va4,va5,
-    addBoundNamesIdMap,
-    addBoundNamesIdSet,
-    addNamesIdSet,
-    idMapToIdSet,
-    anonymousIds,
-    sillyId,
-    etherealIds,
-    isEtherealId,
-    isInvalidId,
-    isEmptyId,
-    idSetToIdMap,
-    mapMaybeIdMap,
-    idSetFromList,
-    idToInt,
-    idSetFromDistinctAscList,
-    idMapFromList,
-    idMapFromDistinctAscList,
-    idSetToList,
-    idMapToList,
-    emptyId,
-    newIds,
-    newId,
-    mixInt,
-    mixInt3,
-    toId,
-    fromId,
-    candidateIds,
-    runIdNameT
-    )where
-
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Applicative
-import Data.Bits
-import Data.Int
-import Data.Monoid
-import qualified Data.Binary as B
-import qualified Data.IntMap  as IM
-import qualified Data.IntSet as IS
-
-import Text.PrettyPrint.ANSI.Leijen
--- import Doc.DocLike
--- import Doc.PPrint
-import Name.Name
-import Name.Internals
-import Util.HasSize
-import Util.Inst()
-import Util.NameMonad
-import Util.SetLike as S
-
 {-
- - An Id is an opaque type with equality and ordering, Its range is split into the following categories
- - all the following categories are disjoint.
- -
- - the unique empty id, called 'emptyId'
- -
- - for every Atom there is a unique cooresponding Id.
- -
- - a set of anonymous ids, indexed by positive numbers.
- -
- - a set of epheremal Ids presented as the list 'epheremalIds'. these are
- - generally used as placeholders for unification algorithms.
- -
- - In general, only atomic and anonymous ids are used as values, and the empty id is used to indicate
- - an usused binding site. epheremal and silly ids are used internally in certain algorithms and have no
- - meaning outside of said context. They never escape the code that uses them.
- -
- -}
+Copyright Hattori, Hiroki (c) 2018
 
-newtype Id = Id Int
-    deriving(Eq,Ord)
+All rights reserved.
 
-anonymous :: Int -> Id
-anonymous x | x <= 0 = error "invalid anonymous id"
-            | otherwise = Id (2*x)
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
--- | some convinience anonymous ids
-va1,va2,va3,va4,va5 :: Id
-va1  = anonymous 1
-va2  = anonymous 2
-va3  = anonymous 3
-va4  = anonymous 4
-va5  = anonymous 5
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
 
--- IdSet
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
 
-instance Intjection Id where
-    toIntjection i = (Id i)
-    fromIntjection (Id i) = i
+    * Neither the name of Hattori, Hiroki nor the names of other
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
 
-type IdSet = IntjectionSet Id
---type instance GSet Id = IdSet
-
-{-
-newtype IdSet = IdSet IS.IntSet
-    deriving(Typeable,Monoid,HasSize,SetLike,IsEmpty,Eq,Ord)
-
-instance BuildSet Id IdSet where
-    fromList = idSetFromList
-    fromDistinctAscList = idSetFromDistinctAscList
-    insert (Id x) (IdSet b) = IdSet $ IS.insert x b
-    singleton (Id x) = IdSet $ IS.singleton x
-
-instance ModifySet Id IdSet where
-    toList = idSetToList
-    delete (Id x) (IdSet b) = IdSet $ IS.delete x b
-    member (Id x) (IdSet b) = IS.member x b
-    sfilter f (IdSet s) = IdSet $ IS.filter (f . Id) s
-
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
+module Name.Id (
+  Name, AnyName(..), KindedName(..),
+  nameIdKind, nameKindSing, toUnknownName, toName,
+  forgeName, nameParts,
+  --
+  Id, AnyId(..), KindedId(..),
+  IdSet, IdMap, AnyIdSet, AnyIdMap, KindedIdSet, KindedIdMap,
+  KnownIdKind(..),
+  idKindSing, toUnknownId, toId,
+  FreshIdT, MonadFreshId(..), runFreshIdT
+  ) where
 
-idSetToList :: IdSet -> [Id]
-idSetToList = S.toList
+import Control.Monad.Trans
+import Control.Monad.State.Strict
+import Data.Set as SET
+import Data.Map.Strict as MAP
+-- import GHC.TypeLits
+-- import GHC.Exts (IsString(..))
+import GHC.Generics
+-- import Data.Proxy
 
-idMapToList :: IdMap a -> [(Id,a)]
-idMapToList = S.toList
+import qualified Data.Text as T
+import Data.Interned (intern)
+import Data.Interned.Text
+import qualified Data.Binary as BIN
 
-idToInt :: Id -> Int
-idToInt (Id x) = x
+-- import Control.Monad.Fresh
 
-mapMaybeIdMap :: (a -> Maybe b) -> IdMap a -> IdMap b
-mapMaybeIdMap fn (IntjectionMap m) = IntjectionMap (IM.mapMaybe fn m)
+-- ---------------------------------------------------------------------------
 
-type IdMap = IntjectionMap Id
---type instance GMap Id = IdMap
+data IdKinds
+  = Unknown
+  | TypeConstructor | DataConstructor
+  | TypeVal | TermVal
+  | ModuleName | ClassName | SortName | FieldLabel
+  | RawType
+  | QuotedName
+  deriving (Show, Generic)
+instance BIN.Binary IdKinds
 
-{-
-newtype IdMap a = IdMap (IM.IntMap a)
-    deriving(Typeable,Monoid,HasSize,SetLike,Functor,Traversable,Foldable,IsEmpty,Eq,Ord)
+class KnownIdKind (k :: IdKinds) where toIdKind :: proxy k -> IdKinds
+instance KnownIdKind 'TypeConstructor where toIdKind _ = TypeConstructor
+instance KnownIdKind 'DataConstructor where toIdKind _ = DataConstructor
+instance KnownIdKind 'TypeVal where toIdKind _ = TypeVal
+instance KnownIdKind 'TermVal where toIdKind _ = TermVal
+instance KnownIdKind 'ModuleName where toIdKind _ = ModuleName
+instance KnownIdKind 'ClassName where toIdKind _ = ClassName
+instance KnownIdKind 'SortName where toIdKind _ = SortName
+instance KnownIdKind 'FieldLabel where toIdKind _ = FieldLabel
+instance KnownIdKind 'RawType where toIdKind _ = RawType
+instance KnownIdKind 'QuotedName where toIdKind _ = QuotedName
 
-instance BuildSet (Id,a) (IdMap a) where
-    fromList = idMapFromList
-    fromDistinctAscList = idMapFromDistinctAscList
-    insert (Id x,y) (IdMap b) = IdMap $ IM.insert x y b
-    singleton (Id x,y) = IdMap $ IM.singleton x y
 
-instance MapLike Id a (IdMap a) where
-    melems (IdMap m) = IM.elems m
-    mdelete (Id x) (IdMap m) = IdMap $ IM.delete x m
-    mmember (Id x) (IdMap m) = IM.member x m
-    mlookup (Id x) (IdMap m) = IM.lookup x m
-    massocs (IdMap m) = [ (Id x,y) | (x,y) <- IM.assocs m ]
-    mkeys (IdMap m) = [ Id x | x <- IM.keys m ]
-    mmapWithKey f (IdMap m) = IdMap $ IM.mapWithKey (\k v -> f (Id k) v) m
-    mfilter f (IdMap m) = IdMap $ IM.filter f m
-    mpartitionWithKey f (IdMap m) = case IM.partitionWithKey (\k v -> f (Id k) v) m of (x,y) -> (IdMap x,IdMap y)
-    munionWith f (IdMap m1) (IdMap m2) = IdMap $ IM.unionWith f m1 m2
-    mfilterWithKey f (IdMap m) = IdMap $ IM.filterWithKey (\k v -> f (Id k) v) m
+data SingK (k :: IdKinds) where
+  SingUnknown :: SingK 'Unknown
+  SingTypeConstructor :: SingK 'TypeConstructor
+  SingDataConstructor :: SingK 'DataConstructor
+  SingTypeVal :: SingK 'TypeVal
+  SingTermVal :: SingK 'TermVal
+  SingModuleName :: SingK 'ModuleName
+  SingClassName :: SingK 'ClassName
+  SingSortName :: SingK 'SortName
+  SingFieldLabel :: SingK 'FieldLabel
+  SingRawType :: SingK 'RawType
+  SingQuotedName :: SingK 'QuotedName
+deriving instance Show (SingK k)
+deriving instance Eq (SingK k)
 
--}
 
---instance GMapSet Id where
---    toSet (IntjectionMap im)  = IntjectionSet $ IM.keysSet im
---    toMap f (IntjectionSet is) = IntjectionMap $ IM.fromDistinctAscList [ (x,f (Id x)) |  x <- IS.toAscList is]
+-- ---------------------------------------------------------------------------
 
---deriving instance MapLike Int a (IM.IntMap a) => MapLike Id a (IdMap a)
+data Name (k :: IdKinds) where
+  UnqualifiedName' :: !InternedText -> Name 'Unknown
+  UnqualifiedName :: KnownIdKind k => !(SingK k) -> !InternedText -> Name k
+  QualifiedName' :: Name 'ModuleName -> !InternedText -> Name 'Unknown
+  QualifiedName :: KnownIdKind k => !(SingK k) -> !(Name 'ModuleName) -> !InternedText -> Name k
+deriving instance Show (Name k)
+deriving instance Eq (Name k)
 
-idSetToIdMap :: (Id -> a) -> IdSet -> IdMap a
---idSetToIdMap f (IdSet is) = IdMap $ IM.fromDistinctAscList [ (x,f (Id x)) |  x <- IS.toAscList is]
-idSetToIdMap f (IntjectionSet is) = IntjectionMap $ IM.fromDistinctAscList [ (x,f (Id x)) |  x <- IS.toAscList is]
+newtype AnyName = AnyName { fromAnyName :: forall k. Name k }
+deriving instance Show AnyName
+deriving instance Eq AnyName
 
-idMapToIdSet :: IdMap a -> IdSet
-idMapToIdSet (IntjectionMap im)  = IntjectionSet $ IM.keysSet im
---idMapToIdSet (IdMap im) = IdSet $ (IM.keysSet im)
+newtype KindedName = KindedName { fromKindedName :: forall k. KnownIdKind k => Name k }
+-- deriving instance Show KindedName
+-- deriving instance Eq KindedName
 
--- | Name monad transformer.
-newtype IdNameT m a = IdNameT (StateT (IdSet, IdSet) m a)
-    deriving(Applicative, Alternative, Monad, MonadTrans, Functor, MonadFix, MonadPlus, MonadIO)
+nameIdKind :: Name (k :: IdKinds) -> IdKinds
+nameIdKind (UnqualifiedName' _) = Unknown
+nameIdKind (UnqualifiedName sing _) = toIdKind sing
+nameIdKind (QualifiedName' _ _) = Unknown
+nameIdKind (QualifiedName sing _ _) = toIdKind sing
 
-instance (MonadReader r m) => MonadReader r (IdNameT m) where
-  ask = lift ask
-  local f (IdNameT m) = IdNameT $ local f m
 
--- | Run the name monad transformer.
-runIdNameT :: (Monad m) => IdNameT m a -> m (a,IdSet)
-runIdNameT (IdNameT x) = do
-    (r,(used,bound)) <- runStateT x (mempty,mempty)
-    return (r,bound)
+nameKindSing :: Name (k :: IdKinds) -> SingK k
+nameKindSing (UnqualifiedName' _) = SingUnknown
+nameKindSing (UnqualifiedName sing _) = sing
+nameKindSing (QualifiedName' _ _) = SingUnknown
+nameKindSing (QualifiedName sing _ _) = sing
 
-fromIdNameT (IdNameT x) = x
 
-instance Monad m => NameMonad Id (IdNameT m) where
-    addNames ns = IdNameT $ do
-        modify (\ (used,bound) -> (fromList ns `union` used, bound) )
-    addBoundNames ns = IdNameT $ do
-        let nset = fromList ns
-        modify (\ (used,bound) -> (nset `union` used, nset `union` bound) )
-    uniqueName n = IdNameT $ do
-        (used,bound) <- get
-        if n `member` bound then fromIdNameT newName else put (insert n used,insert n bound) >> return n
-    newNameFrom vs = IdNameT $ do
-        (used,bound) <- get
-        let f (x:xs)
-                | x `member` used = f xs
-                | otherwise = x
-            f [] = error "newNameFrom: finite list!"
-            nn = f vs
-        put (insert nn used, insert nn bound)
-        return nn
-    newName  = IdNameT $ do
-        (used,bound) <- get
-        fromIdNameT $ newNameFrom (candidateIds (size used `mixInt` size bound))
+toUnknownName :: T.Text -> Name 'Unknown
+toUnknownName = UnqualifiedName' . intern
 
-addNamesIdSet nset = IdNameT $ do
-    modify (\ (used,bound) -> (nset `union` used, bound) )
-addBoundNamesIdSet nset = IdNameT $ do
-    modify (\ (used,bound) -> (nset `union` used, nset `union` bound) )
 
-addBoundNamesIdMap nmap = IdNameT $ do
-    modify (\ (used,bound) -> (nset `union` used, nset `union` bound) ) where
-        nset = idMapToIdSet nmap
+toName :: KnownIdKind k => SingK k ->T.Text -> Name k
+toName sing = UnqualifiedName sing . intern
 
-idSetFromDistinctAscList :: [Id] -> IdSet
-idSetFromDistinctAscList ids = IntjectionSet (IS.fromDistinctAscList [ x | Id x <- ids] )
 
-idSetFromList :: [Id] -> IdSet
-idSetFromList ids = fromList ids
+forgeName :: KnownIdKind k => SingK k -> Name 'ModuleName -> T.Text -> Name k
+--forgeName SingUnknown Nothing = UnqualifiedName' . intern
+--forgeName SingUnknown (Just x) = QualifiedName' x . intern
+-- forgeName sing Nothing = UnqualifiedName sing . intern
+forgeName sing x = QualifiedName sing x . intern
 
-idMapFromList :: [(Id,a)] -> IdMap a
-idMapFromList ids = fromList  ids
 
-idMapFromDistinctAscList :: [(Id,a)] -> IdMap a
-idMapFromDistinctAscList ids = IntjectionMap (IM.fromDistinctAscList [ (x,y) | (Id x,y) <- ids ] )
+nameParts :: Name k -> (SingK k, Maybe (Name 'ModuleName), Name k)
+nameParts x@(UnqualifiedName' _) = (SingUnknown, Nothing, x)
+nameParts x@(UnqualifiedName sing _) = (sing, Nothing, x)
+nameParts (QualifiedName' m name) = (SingUnknown, Just m, UnqualifiedName' name)
+nameParts (QualifiedName sing m name) = (sing, Just m, UnqualifiedName sing name)
 
-instance Show Id where
-        showsPrec _ (Id 0) =  showChar '_'
-        showsPrec _ (Id x) =  maybe (showString ('x':show (x `div` 2))) shows (fromId $ Id x)
 
--- instance Show IdSet where
---    showsPrec n is = showsPrec n (idSetToList is)
+-- ---------------------------------------------------------------------------
 
--- instance Show v => Show (IdMap v) where
---     showsPrec n is = showsPrec n (idMapToList is)
+data Id (k :: IdKinds) where
+  AtomId ::  Name k -> Id k
+  Id' :: !Int -> Id 'Unknown
+  Id :: KnownIdKind k => !(SingK k) -> !Int -> Id k
+deriving instance Show (Id k)
+deriving instance Eq (Id k)
 
-anonymousIds :: [Id]
-anonymousIds = map anonymous [1 .. ]
+newtype AnyId = AnyId { fromAnyId :: forall (k :: IdKinds). Id k }
+-- deriving instance Show AnyId
+deriving instance Eq AnyId
 
-etherealIds :: [Id]
-etherealIds = map Id [-4, -6 ..  ]
+newtype KindedId = KindedId { fromKindedId :: forall (k :: IdKinds). KnownIdKind k => Id k }
+-- deriving instance Show KindedId
+-- deriving instance Eq KindedId
 
-isEmptyId x = x == emptyId
-isEtherealId id = id < emptyId
+type AnyIdSet = SET.Set AnyId
+type KindedIdSet = SET.Set KindedId
+type IdSet k = SET.Set (Id k)
 
--- | id isn't anonymous or atom-mapped
-isInvalidId id = id <= emptyId
+type AnyIdMap a = MAP.Map AnyId a
+type KindedIdMap a = MAP.Map KindedId a
+type IdMap k a = MAP.Map (Id k) a
 
--- | A occasionally useful random ethereal id
-sillyId :: Id
-sillyId = Id $ -2
 
-emptyId :: Id
-emptyId = Id 0
 
--- | find some temporary ids that are not members of the set,
--- useful for generating a small number of local unique names.
+-- ---------------------------------------------------------------------------
+#if 0
+instance Eq (Id (k :: IdKinds)) where
+  (AtomId' x) == (AtomId' y) = x == y
+  (AtomId' x) == (AtomId SingUnknown y) = x == y
+  (AtomId SingUnknown x) == (AtomId' y) = x == y
+  (AtomId _ x) == (AtomId _ y) = x == y
+  (Id' x) == (Id' y) = x == y
+  (Id' x) == (Id SingUnknown y) = x == y
+  (Id SingUnknown x) == (Id' y) = x == y
+  (Id _ x) == (Id _ y) = x == y
+  _ == _ = False
+#endif
 
-newIds :: IdSet -> [Id]
-newIds (IntjectionSet ids) = ans where
-    ans = if sids == 0 then candidateIds 42 else [ Id i | Id i <- candidates, i `notMember` ids ]
-    sids = size ids
-    candidates = candidateIds (mixInt3 sids (IS.findMin ids) (IS.findMax ids))
 
-newId :: Int           -- ^ a seed value, useful for speeding up finding a unique id
-      -> (Id -> Bool)  -- ^ whether an Id is acceptable
-      -> Id            -- ^ your new Id
-newId seed check = head $ filter check (candidateIds seed)
+-- ---------------------------------------------------------------------------
 
--- generate a list of candidate anonymous ids based on a seed value
-candidateIds :: Int -> [Id]
-candidateIds !seed = f (2 + (mask $ hashInt seed)) where
-    mask x = x .&. 0x0FFFFFFE
-    f !x = Id x:f (x + 2)
-    --mask x = trace ("candidate " ++ show seed) $ Id $ x .&. 0x0FFFFFFE
+idKindSing :: forall (k :: IdKinds). Id k  -> SingK k
+-- idKindSing (AtomId' _) = SingUnknown
+idKindSing (AtomId name) = nameKindSing name
+idKindSing (Id' _) = SingUnknown
+idKindSing (Id sing _) = sing
 
--- deconstruct Id stle atom
-intToName :: Int -> Maybe Name
-intToName i = if odd i then Just (unsafeWord32ToName $  (fromIntegral i) `unsafeShiftR` 1) else Nothing
 
-toId :: Name -> Id
-toId x = Id . fromIntegral $ (unsafeNameToWord32 x `unsafeShiftL` 1) .|. 1
+toUnknownId :: T.Text -> Id 'Unknown
+toUnknownId = AtomId . UnqualifiedName' . intern
+{-# INLINE toUnknownId #-}
 
-fromId :: Monad m => Id -> m Name
-fromId (Id i) = case intToName i of
-    Just a -> return a
-    Nothing -> fail $ "Name.fromId: not a name " ++ show (Id i)
 
-instance Pretty Id where pretty = text . show
--- instance DocLike d => PPrint d Id where
---     pprint x = tshow x
 
-instance GenName Id where
-    genNames = candidateIds
+toId :: KnownIdKind k => SingK k -> T.Text -> Id k
+toId sing = AtomId . UnqualifiedName sing . intern
+{-# INLINE toId #-}
 
-instance B.Binary Id where
-    put (Id x) = case intToName x of
-        Just (nameToBits -> (a,nt)) -> do B.putWord8 (239 + unsafeNameTypeToWord8 nt) >> B.put a
-        Nothing | x2 >= 0 && x2 < 238 -> B.putWord8 (fromIntegral x2)
-                | otherwise -> do
-                    B.putWord8 238
-                    B.put (fromIntegral x2 :: Int32)
-        where !x2 = x `unsafeShiftR` 1
-    get = do
-        x <- B.getWord8
-        case x of
-            _ | x > 238 -> do
-                a <- B.get
-                return (toId $ bitsToName a (unsafeWord8ToNameType $ x - 239))
-            238 -> do
-                v <- B.get
-                return (Id $ fromIntegral ((v :: Int32) `unsafeShiftL` 1))
-            _ -> return (Id $ (fromIntegral x) `unsafeShiftL` 1)
+-- freshUnknownId :: MonadFresh Int m _=> m (Id Unknown)
+-- freshId :: MonadFresh Int m => SingK k -> m (Id k)
+
+
+-- ---------------------------------------------------------------------------
+
+newtype FreshIdT m a = FreshIdT (StateT Int m a)
+  deriving (Functor, Applicative, Monad)
+instance MonadTrans FreshIdT where lift = FreshIdT . lift
+instance MonadIO m => MonadIO (FreshIdT m) where liftIO = lift.liftIO
+
+class MonadFreshId m where
+  freshUnknonwId :: m (Id 'Unknown)
+  freshId :: KnownIdKind k => SingK k -> m (Id k)
+instance Monad m => MonadFreshId (FreshIdT m) where
+  freshUnknonwId = FreshIdT $ do { x <- get; put (x + 1); return $ Id' x }
+  freshId k = FreshIdT $ do { x <- get; put (x + 1); return $ Id k x }
+
+
+runFreshIdT :: Monad m => Int -> FreshIdT m a -> m a
+runFreshIdT x (FreshIdT y) = evalStateT y x
+
+
+
+-- ---------------------------------------------------------------------------
+
+
