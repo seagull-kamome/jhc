@@ -303,7 +303,7 @@ reference x = expDC $ do
 
 
 indexArray :: Expression -> Expression -> Expression
-indexArray w i = expDO $ do 
+indexArray w i = expDO $ do
   w' <- pdraw w
   i' <- pdraw i
   return $ w' <> brackets i'

@@ -191,7 +191,7 @@ instance MonadStats IO where
     mtickStat (Stat s) = do
         tickStat theStats (Stat s)
         p <- readIORef printStats
-        when p $ forM_ (IMap.toList s) $ \ (x,y) -> 
+        when p $ forM_ (IMap.toList s) $ \ (x,y) ->
             putStrLn (show (unsafeIntToAtom x) ++ ": " ++ show y)
 
 --------------------
