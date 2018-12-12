@@ -69,7 +69,7 @@ processFiles cs = f cs (optMainFunc options) where
         g [Left m]
     f cs _ = g (map fileOrModule cs)
     g fs = processCollectedHo . snd =<< parseFiles options [outputName]
-	    fs processInitialHo processDecls
+            fs processInitialHo processDecls
     fileOrModule f = case reverse f of
         ('s':'h':'.':_)     -> Right f
         ('s':'h':'l':'.':_) -> Right f
