@@ -16,7 +16,7 @@ import qualified Info.Properties as Prop
 
 
 -- ---------------------------------------------------------------------------
--- 
+--
 
 data Entry = Entry { entryThing :: Dynamic, entryString :: String }
 
@@ -30,7 +30,7 @@ entryType = dynTypeRep . entryThing
 
 
 -- ---------------------------------------------------------------------------
--- 
+--
 
 data Info = Info { infoProperties :: !Prop.PropertySet, infoMap :: Map.Map TypeRep Entry }
     deriving(Typeable)
