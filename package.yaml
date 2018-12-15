@@ -46,6 +46,7 @@ library:
   - MultiParamTypeClasses
   - FlexibleInstances
   - GeneralizedNewtypeDeriving
+  - TypeFamilies
 
 
 executables:
@@ -57,8 +58,6 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     - -Wall
-    include-dirs:
-    - app/StringTable
     default-extensions:
     - CPP
     - BangPatterns
