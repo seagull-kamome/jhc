@@ -1,4 +1,4 @@
-module Jhc.Data.Interned.Text.Binary (InternedText) where
+module Jhc.Data.Interned.Text.Binary (InternedText(..)) where
 
 import qualified Data.Text as T
 import Data.Interned
