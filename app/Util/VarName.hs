@@ -9,12 +9,13 @@ module Util.VarName(
     maybeLookupName,
     newLookupName) where
 
+import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Identity
 import qualified Data.Map as Map
 
 newtype VarNameT nc ni no m a = VarName (StateT (Map.Map ni no, Map.Map nc Int) m a)
-    deriving(Monad, MonadTrans, Functor, MonadFix, MonadPlus, MonadIO)
+    deriving (Functor, Applicative, Alternative, Monad, MonadTrans, MonadFix, MonadPlus, MonadIO)
 
 type VarName ni no a = VarNameT () ni no Identity a
 
@@ -37,7 +38,7 @@ newName :: (Ord ni, Ord nc,Monad m) => [no] -> nc -> ni -> VarNameT nc ni no m n
 newName ns nc ni = VarName $ do
     (nim,ncm) <- get
     let no = ns!!i
-        Just i = fmap (subtract 1) $ Map.lookup nc ncm'
+        Just i = subtract 1 <$> Map.lookup nc ncm'
         ncm' = Map.insertWith' (+) nc 1 ncm
     put (Map.insert ni no nim, ncm')
     return no
@@ -63,7 +64,7 @@ newLookupName ns nc ni = VarName $ do
         Just x -> return x
         Nothing -> do
             let no = ns!!i
-                Just i = fmap (subtract 1) $ Map.lookup nc ncm'
+                Just i = subtract 1 <$> Map.lookup nc ncm'
                 ncm' = Map.insertWith' (+) nc 1 ncm
             put (Map.insert ni no nim, ncm')
             return no
