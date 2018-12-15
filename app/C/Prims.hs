@@ -1,17 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module C.Prims where
 
+import qualified Data.Text as T
 import Data.Binary
 import Data.Monoid (Monoid(..))
 import Data.Typeable
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BS -- utf8-string
+
 import GHC.Exts
 import GHC.Generics (Generic)
-import Text.PrettyPrint.ANSI.Leijen (Pretty(pretty), text, char, parens, tupled)
+import Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
 
-import StringTable.Atom
+import Data.Interned (intern, unintern)
+import Jhc.Data.Interned.Text.Binary
 import qualified Cmm.Op as Op
 
 
@@ -48,9 +51,8 @@ data DotNetPrim = DotNetField | DotNetCtor | DotNetMethod
 instance Binary DotNetPrim
 
 
-
-data Prim =
-    PrimPrim Atom -- Special primitive implemented in the compiler somehow.
+data Prim
+    = Prim !InternedText -- Special primitive implemented in the compiler somehow.
     | CConst {
         primRequires :: Requires,
         primConst    :: !BS.ByteString
@@ -153,13 +155,13 @@ primEagerSafe PrimTypeInfo {} = True
 primEagerSafe Op { primCOp = op } = Op.isEagerSafe op
 primEagerSafe _ = False
 
-primPrim :: ToAtom a => a -> Prim
-primPrim = PrimPrim . toAtom
+primPrim :: T.Text -> Prim
+primPrim = Prim . InternedText . intern
 
 
 instance Pretty ExtType where pretty = text . show
 instance Pretty Prim where
-    pretty (PrimPrim t)   = text (fromAtom t)
+    pretty (Prim t)   = text (T.unpack $ unintern $ unwrap t)
     pretty (CConst _ s)   = parens (text $ BS.toString s)
     pretty Func { .. }    = parens (text $ show primRetType) <> text (BS.toString funcName) <> tupled (map pretty primArgTypes)
     pretty IFunc { .. }   = parens (text $ show primRetType) <> parens (char '*') <> tupled (map pretty primArgTypes)
