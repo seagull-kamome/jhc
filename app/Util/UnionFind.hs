@@ -5,7 +5,7 @@ module Util.UnionFind(
     --
     new, new_,
     find,
-    getW, putW, updateW,
+    getWeight, putWeight, updateWeight,
     union, union_
     ) where
 
@@ -17,7 +17,9 @@ import Control.Monad (when)
 
 -- ---------------------------------------------------------------------------
 
-data Element w a = Element a !Unique {-# UNPACK #-} !(IORef (Link w a))
+data Link w a = Weight !Int w | Next (Element w a)
+data Element w a
+  = Element { fromElement::a, elmKey:: !Unique, elmLink:: !(IORef (Link w a)) }
 instance Eq (Element w a) where
   Element _ x _ == Element _ y _ = x == y
 instance Ord (Element w a) where
@@ -25,13 +27,6 @@ instance Ord (Element w a) where
 instance Show a => Show (Element w a) where
   show (Element x _ _) = show x
 
-fromElement :: Element w a -> a
-fromElement (Element a _ _) = a
-
-
--- ---------------------------------------------------------------------------
-
-data Link w a = Weight {-# UNPACK #-} !Int w | Next (Element w a)
 
 -- ---------------------------------------------------------------------------
 
@@ -51,21 +46,17 @@ find x@(Element _ _ r) = liftIO $ readIORef r >>= \case
       when (next /= y) $ writeIORef r (Next y)
       return y
 
-getW :: MonadIO m => Element w a -> m w
-getW x = liftIO $ do
-  Element _ _ r <- find x
-  Weight _ w <- readIORef  r
+getWeight :: MonadIO m => Element w a -> m w
+getWeight x = liftIO $ do
+  Weight _ w <- find x >>= readIORef . elmLink
   return w
 
-updateW :: MonadIO m => (w -> w) -> Element w a -> m ()
-updateW f x = liftIO $ do
-  Element _ _ r <- find x
-  modifyIORef r (\ (Weight s w) -> Weight s (f w))
+updateWeight :: MonadIO m => (w -> w) -> Element w a -> m ()
+updateWeight f x = liftIO $
+  find x >>= flip modifyIORef (\ (Weight s w) -> Weight s (f w)) . elmLink
 
-putW :: MonadIO m => Element w a -> w -> m ()
-putW e w = liftIO $ do
-  Element _ _ r <- find e
-  modifyIORef r (\ (Weight s _) -> Weight s w)
+putWeight :: MonadIO m => Element w a -> w -> m ()
+putWeight e w = updateWeight (const w) e
 
 union :: MonadIO m => (w -> w -> w) -> Element w a -> Element w a -> m ()
 union comb e1 e2 = liftIO $ do

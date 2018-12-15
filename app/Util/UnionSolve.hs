@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+-- simple constraint solver based on ideas from 'Once upon a polymorphic type' paper.
 module Util.UnionSolve(
     C(),
     solve,
@@ -10,7 +10,8 @@ module Util.UnionSolve(
     (@<=),(@>=),(@=),(@<=@),(@>=@),(@=@)
     ) where
 
-import Control.Monad(unless, forM_)
+import Control.Monad(unless, forM, forM_)
+import Data.Maybe (isNothing)
 import Data.List(intersperse)
 import Data.Monoid
 import qualified Data.Foldable as S
@@ -20,48 +21,117 @@ import qualified Data.Set as Set
 
 import Util.UnionFind as UF
 
--- simple constraint solver based on ideas from 'Once upon a polymorphic type' paper.
+
+-- ---------------------------------------------------------------------------
 
 class Fixable a where
-    -- determine if we are at the top or bottom of the lattice, we can
-    -- solidify bounds if we know we are at an endpoint.
-    isBottom :: a -> Bool
-    isTop :: a -> Bool
-    -- lattice operators
-    join :: a -> a -> a
-    meet :: a -> a -> a
-    eq :: a -> a -> Bool
-    lte :: a -> a -> Bool
-    -- used for debugging
-    showFixable :: a -> String
-    -- default methods
-    showFixable x | isBottom x = "B"
-                  | isTop x = "T"
-                  | otherwise = "*"
-    eq x y = lte x y && lte y x
-    isBottom _ = False
+  -- determine if we are at the top or bottom of the lattice, we can
+  -- solidify bounds if we know we are at an endpoint.
+  isBottom :: a -> Bool
+  isTop :: a -> Bool
+  -- lattice operators
+  join :: a -> a -> a
+  meet :: a -> a -> a
+  eq :: a -> a -> Bool
+  lte :: a -> a -> Bool
+  showFixable :: a -> String -- used for debugging
+
+  isBottom _ = False
+  isTop _ = False
+  eq x y = lte x y && lte y x
+  showFixable x | isBottom x = "B"
+                | isTop x = "T"
+                | otherwise = "*"
+
+-- ---------------------------------------------------------------------------
+
+instance Ord n => Fixable (Set.Set n)  where
+  isBottom = Set.null
+  join = Set.union
+  meet = Set.intersection
+  lte = Set.isSubsetOf
+  eq = (==)
+
+
+
+instance Fixable Bool where
+  isBottom = not
+  isTop = id
+  join = (||)
+  meet = (&&)
+  eq = (==)
+  lte = (<=)
+
+
+
+-- join is the maximum of integer values, as in this is the lattice of maximum, not the additive one.
+instance Fixable Int where { join = max; meet = min; lte = (<=); eq = (==) }
+
+
+instance (Fixable a,Fixable b) => Fixable (a,b) where
+  isBottom (a,b) = isBottom a && isBottom b
+  isTop (a,b) = isTop a && isTop b
+  join (x,y) (x',y') = (join x x', join y y')
+  meet (x,y) (x',y') = (meet x x', meet y y')
+  lte (x,y) (x',y') = lte x x' && lte y y'
+  eq (x,y) (x',y') = eq x x' && eq y y'
+
+
+
+-- the maybe instance creates a new bottom of nothing. note that (Just bottom) is a distinct point.
+instance Fixable a => Fixable (Maybe a) where
+    isBottom = isNothing
+    isTop = maybe False isTop
+    join Nothing b = b
+    join a Nothing = a
+    join (Just a) (Just b) = Just (join a b)
+    meet Nothing b = Nothing
+    meet a Nothing = Nothing
+    meet (Just a) (Just b) = Just (meet a b)
+    lte Nothing _ = True
+    lte _ Nothing = False
+    lte (Just x) (Just y) = x `lte` y
+
+
+
+-- the topped instance creates a new top of everything.
+-- this is the opposite of the 'Maybe' instance
+data Topped a = Only a | Top deriving(Eq,Ord,Show)
+
+-- the maybe instance creates a new bottom of nothing. note that (Just bottom) is a distinct point.
+instance Fixable a => Fixable (Topped a) where
+    isBottom (Only x) = isBottom x
+    isBottom Top = False
+    isTop Top = True
     isTop _ = False
+    meet Top b = b
+    meet a Top = a
+    meet (Only a) (Only b) = Only (meet a b)
+    join Top b = Top
+    join a Top = Top
+    join (Only a) (Only b) = Only (join a b)
+    eq Top Top = True
+    eq (Only x) (Only y) = eq x y
+    eq _ _ = False
+    lte _ Top = True
+    lte Top _ = False
+    lte (Only x) (Only y) = x `lte` y
+
+-- ---------------------------------------------------------------------------
+
 
 -- arguments are the lattice and the variable type
 -- mappended together when used in a writer monad.
 -- (C l v) represents a constraint (or set of constraints) that confine the
 -- variables 'v' to within specific values of 'l'
 
-newtype C l v = C (S.Seq (CL l v))
-    deriving(Monoid)
+newtype C l v = C (S.Seq (CL l v)) deriving (Semigroup, Monoid)
 
 data Op = OpLte | OpEq | OpGte
-
-{-
-flipOp OpLte = OpGte
-flipOp OpGte = OpLte
-flipOp OpEq = OpEq
--}
-
 instance Show Op where
-    show OpEq  = " = "
-    show OpGte = " >= "
-    show OpLte = " <= "
+  show OpEq  = " = "
+  show OpGte = " >= "
+  show OpLte = " <= "
 
 data CL l v = CV v Op v | CL v Op l | CLAnnotate String (CL l v)
 
@@ -112,9 +182,12 @@ data R l a = R l |  Ri (Maybe l) (Set.Set (RS l a))  (Maybe l) (Set.Set (RS l a)
     deriving(Show)
 type RS l a = Element (R l a) a
 
+
+
 -- replace variables with UnionFind elements
 prepareConstraints :: Ord v => C l v -> IO ([CL l (RS l v)], Map.Map v (RS l v))
-prepareConstraints (C cseq) = f Map.empty (S.toList cseq) id [] where
+prepareConstraints (C cseq) = f Map.empty (S.toList cseq) id []
+  where
     f m (c:cs) ar rs = do
         let h x mp = case Map.lookup x mp of
                 Just v -> return (v,mp)
@@ -132,10 +205,14 @@ prepareConstraints (C cseq) = f Map.empty (S.toList cseq) id [] where
             CLAnnotate s c -> f m (c:cs) (ar . CLAnnotate s) rs
     f m [] _ rs = return (rs,m)
 
+
+
 check op x y = case op of
     OpEq -> x `eq` y
     OpLte -> x `lte` y
     OpGte -> y `lte` x
+
+
 
 {-# NOINLINE solve #-}
 solve :: (Fixable l, Show l, Show v, Ord v)
@@ -146,17 +223,17 @@ solve putLog csp = do
     (pcs,varMap) <- prepareConstraints csp
     let procVar (CV x op y) = do
             xe <- UF.find x
-            ye <- UF.find y
-            doVar "" xe op ye
+            UF.find y >>= doVar "" xe op
         procVar (CLAnnotate s CL {}) =  return ()
         procVar CL {} = return ()
         procVar (CLAnnotate s cr) =  putLog s >>  procVar cr
+        --
         doVar _ xe _ ye | xe == ye = return ()
         doVar lvl xe op ye = do
             putLog $ lvl ++ "Constraining: " ++ show (fromElement xe) ++ show op ++ show (fromElement ye)
-            xw <- UF.getW xe
-            yw <- UF.getW ye
-            case (xw,yw) of
+            xw <- UF.getWeight xe
+            yw <- UF.getWeight ye
+            case (xw, yw) of
                 (Ri xml xlb xmu xub,Ri yml ylb ymu yub) -> do
                     xub <- finds xub
                     xlb <- finds xlb
@@ -172,27 +249,26 @@ solve putLog csp = do
             ne <- find xe
             nlb <- finds (xlb `Set.union` ylb)
             nub <- finds (yub `Set.union` xub)
-            UF.putW ne (Ri Nothing nlb Nothing nub)
+            UF.putWeight ne (Ri Nothing nlb Nothing nub)
             checkRS lvl ne
         doLte lvl xe ~xw@(Ri xml xlb xmu xub) ye ~yw@(Ri yml ylb ymu yub) = do
-            let done = UF.putW xe (Ri xml xlb xmu xub) >> UF.putW ye (Ri yml ylb ymu yub)
-            if ye `Set.member` xub then done else do
-            if xe `Set.member` ylb then done else do
-            if ye `Set.member` xlb then doEq lvl xe xw ye yw else do
-            if xe `Set.member` yub then doEq lvl xe xw ye yw else do
-            UF.putW xe (Ri xml xlb xmu (Set.insert ye (xub `Set.union` yub)))
-            UF.putW ye (Ri yml (Set.insert xe (ylb `Set.union` xlb)) ymu yub)
-            checkRS lvl xe
-            ye <- find ye
-            checkRS lvl ye
+            let done = UF.putWeight xe (Ri xml xlb xmu xub) >> UF.putWeight ye (Ri yml ylb ymu yub)
+            if
+              | ye `Set.member` xub || xe `Set.member` ylb -> done
+              | ye `Set.member` xlb || xe `Set.member` yub -> doEq lvl xe xw ye yw
+              | otherwise -> do
+                  UF.putWeight xe (Ri xml xlb xmu (Set.insert ye (xub `Set.union` yub)))
+                  UF.putWeight ye (Ri yml (Set.insert xe (ylb `Set.union` xlb)) ymu yub)
+                  checkRS lvl xe
+                  find ye >>= checkRS lvl
         checkRS lvl ve = do
-            Ri l lb h ub <- UF.getW ve
+            Ri l lb h ub <- UF.getWeight ve
             lb <- finds lb
             ub <- finds ub
-            UF.putW ve (Ri l (Set.delete ve lb) h (Set.delete ve ub))
+            UF.putWeight ve (Ri l (Set.delete ve lb) h (Set.delete ve ub))
             let equiv = lb `Set.intersection` ub
-            forM_ (Set.toList equiv) $ doVar ('#':lvl) ve OpEq
-        finds set = fmap Set.fromList $ mapM UF.find (Set.toList set)
+             in forM_ (Set.toList equiv) $ doVar ('#':lvl) ve OpEq
+        finds set = Set.fromList <$> mapM UF.find (Set.toList set)
     mapM_ procVar pcs
 
     let procLit (CL x op y) = do
@@ -203,17 +279,17 @@ solve putLog csp = do
         procLit (CLAnnotate s cr) =  putLog s >>  procLit cr
 
         doOp lvl ve op l = do
-            let doOp' ve op l = doOp ('-':lvl) ve op l
+            let doOp' = doOp ('-':lvl)
             putLog $ lvl ++ "Constraining: " ++ show (fromElement ve) ++ show op ++ show l
-            vw <- getW ve
+            vw <- getWeight ve
             case (op,vw) of
                 (_,R c) | check op c l -> return ()
                         | otherwise -> fail $ "UnionSolve: constraint doesn't match (" ++ show c ++ show op ++ show l ++ ") when setting " ++ show (fromElement ve)
-                (OpEq,Ri ml lb mu ub) | testBoundLT ml l && testBoundGT mu l -> do
-                    updateW (const (R l)) ve
+                (OpEq,Ri ml lb mu ub) | maybe True (`lte` l) ml && maybe True (l `lte`) mu -> do
+                    updateWeight (const (R l)) ve
                     mapM_ (\v -> doOp' v OpLte l) (Set.toList lb)
                     mapM_ (\v -> doOp' v OpGte l) (Set.toList ub)
-                (OpEq,_) | otherwise -> fail $ "UnionSolve: setValue " ++ show (fromElement ve,vw,l)
+                (OpEq,_) -> fail $ "UnionSolve: setValue " ++ show (fromElement ve,vw,l)
                 (OpLte,Ri _ _ (Just n) _) | n `lte` l -> return ()
                 (OpGte,Ri (Just n) _ _ _) | l `lte` n -> return ()
                 (OpLte,Ri (Just n) _ _ _) | n `eq` l -> doOp' ve OpEq l
@@ -221,151 +297,63 @@ solve putLog csp = do
                 (OpLte,Ri (Just n) _ _ _) | l `lte` n -> fail $ "UnionSolve: lower than lower bound  " ++ show (fromElement ve,vw,l,n)
                 (OpGte,Ri _ _ (Just n) _) | n `lte` l -> fail $ "UnionSolve: higher than higher bound  " ++ show (fromElement ve,vw,l,n)
                 (OpLte,Ri ml lb mu ub) -> do
-                    let nv@(Just l') = mmeet (Just l) mu
+                    let nv@(Just l') = meet l <$> mu
                     doUpdate (Ri ml lb nv ub) ve
                     unless (nv `eq` mu) $
                         mapM_ (\v -> doOp' v OpLte l') (Set.toList lb)
                 (OpGte,Ri ml lb mu ub) -> do
-                    let nv@(Just l') = (mjoin (Just l) ml)
+                    let nv@(Just l') = join l <$> ml
                     doUpdate (Ri nv lb mu ub) ve
                     unless (nv `eq` ml) $
                         mapM_ (\v -> doOp' v OpGte l') (Set.toList ub)
                 -- _ -> fail $ "UnionSolve: bad " ++  show (fromElement ve,vw,op,l)
-        testBoundLT Nothing _ = True
-        testBoundLT (Just x) y = x `lte` y
-        testBoundGT Nothing _ = True
-        testBoundGT (Just x) y = y `lte` x
+        --
         checkRS (Ri (Just l) _ (Just u) _) xe | l `eq` u = do
             putLog $ "Boxed in value of " ++ show (fromElement xe) ++ " being set to " ++ show l
             doOp "&" xe OpEq l
-        checkRS (Ri (Just l) _ (Just u) _) xe | u `lte` l = fail "checkRS: you crossed the streams"
+        checkRS (Ri (Just l) _ (Just u) _) _ | u `lte` l = fail "checkRS: you crossed the streams"
         checkRS (Ri (Just l) _ _ _) xe  | isTop l = do
             putLog $ "Going up:   " ++ show (fromElement xe)
             doOp "&" xe OpEq l
         checkRS (Ri  _ _ (Just u) _) xe | isBottom u = do
             putLog $ "Going down: " ++ show (fromElement xe)
             doOp "&" xe OpEq u
-        checkRS r xe = return ()
-        doUpdate r xe = do
-            updateW (const r) xe
-            checkRS r xe
-        mjoin Nothing b = b
-        mjoin x Nothing = x
-        mjoin (Just x) (Just y) = Just (join x y)
-        mmeet Nothing b = b
-        mmeet x Nothing = x
-        mmeet (Just x) (Just y) = Just (meet x y)
+        checkRS _ xe = return ()
+        --
+        doUpdate r xe = updateWeight (const r) xe >> checkRS r xe
     mapM_ procLit pcs
-    rs <- flip mapM (Map.toList varMap) $ \ (a,e) -> do
-        e <- find e
-        w <- getW e
+    rs <- forM (Map.toList varMap) $ \ (a, e) -> do
+        e' <- find e
+        w <- getWeight e'
+        let aa = fromElement e'
         rr <- case w of
-            R v -> return (ResultJust (fromElement e) v)
+            R v -> return (ResultJust (fromElement e') v)
             Ri ml lb mu ub -> do
-                ub <- fmap (map fromElement . Set.toList) $ finds ub
-                lb <- fmap (map fromElement . Set.toList) $ finds lb
-                return (ResultBounded { resultRep = fromElement e, resultUB = mu, resultLB = ml, resultLBV = lb, resultUBV = ub })
-        let aa = fromElement e
-        return ((a,aa),(aa,rr))
-    let (ma,mb) = unzip rs
-    return (Map.fromList ma,Map.fromList mb)
+                ub' <- map fromElement . Set.toList <$> finds ub
+                lb' <- map fromElement . Set.toList <$> finds lb
+                return (ResultBounded { resultRep = aa, resultUB = mu, resultLB = ml, resultLBV = lb', resultUBV = ub' })
+        return ((a, aa), (aa, rr))
+    return $ let (ma,mb) = unzip rs in (Map.fromList ma, Map.fromList mb)
 
 -----------------------------------------------------------
 -- The data type the results of the analysis are placed in.
 -----------------------------------------------------------
-data Result l a =
-    ResultJust {
-        resultRep :: a,
-        resultValue :: l
-    } |
-    ResultBounded {
-        resultRep :: a,
-        resultLB :: Maybe l,
-        resultUB :: Maybe l,
-        resultLBV ::[a],
-        resultUBV ::[a]
+data Result l a
+  = ResultJust { resultRep :: a, resultValue :: l }
+  | ResultBounded {
+      resultRep :: a,
+      resultLB :: Maybe l,
+      resultUB :: Maybe l,
+      resultLBV ::[a],
+      resultUBV ::[a]
     }
 
 instance (Show l, Show a) => Show (Result l a) where
-    showsPrec _ x = (showResult x ++)
+  show (ResultJust a l) = show a ++ " = " ++ show l
+  show ResultBounded {..} = sb resultLB resultLBV ++ " <= " ++ show resultRep ++ " <= " ++ sb resultUB resultUBV
+    where
+      sb x [] = maybe "_" show x
+      sb x n = maybe mempty show x ++ show n
 
-showResult (ResultJust a l) = show a ++ " = " ++ show l
-showResult rb@ResultBounded {} = sb (resultLB rb) (resultLBV rb) ++ " <= " ++ show (resultRep rb) ++ " <= " ++ sb (resultUB rb) (resultUBV rb)  where
-    sb Nothing n | null n = "_"
-    sb (Just x) n | null n = show x
-    sb Nothing n = show n
-    sb (Just x) n = show x ++ show n
+-- vim: ts=8 sw=2 expandtab :
 
--------------------------------
--- useful instances for Fixable
--------------------------------
-
-instance Ord n => Fixable (Set.Set n)  where
-    isBottom = Set.null
-    join a b = Set.union a b
-    meet a b = Set.intersection a b
-    lte a b = Set.isSubsetOf a b
-    eq = (==)
-
-instance Fixable Bool where
-    isBottom x = not x
-    isTop x = x
-    join a b = a || b
-    meet a b = a && b
-    eq = (==)
-    lte = (<=)
-
--- join is the maximum of integer values, as in this is the lattice of maximum, not the additive one.
-instance Fixable Int where
-    join a b = max a b
-    meet a b = min a b
-    lte = (<=)
-    eq = (==)
-
-instance (Fixable a,Fixable b) => Fixable (a,b) where
-    isBottom (a,b) = isBottom a && isBottom b
-    isTop (a,b) = isTop a && isTop b
-    join (x,y) (x',y') = (join x x', join y y')
-    meet (x,y) (x',y') = (meet x x', meet y y')
-    lte (x,y) (x',y') = (lte x x' && lte y y')
-    eq (x,y) (x',y') = (eq x x' && eq y y')
-
--- the maybe instance creates a new bottom of nothing. note that (Just bottom) is a distinct point.
-instance Fixable a => Fixable (Maybe a) where
-    isBottom Nothing = True
-    isBottom _ = False
-    isTop Nothing = False
-    isTop (Just x) = isTop x
-    join Nothing b = b
-    join a Nothing = a
-    join (Just a) (Just b) = Just (join a b)
-    meet Nothing b = Nothing
-    meet a Nothing = Nothing
-    meet (Just a) (Just b) = Just (meet a b)
-    lte Nothing _ = True
-    lte _ Nothing = False
-    lte (Just x) (Just y) = x `lte` y
-
--- the topped instance creates a new top of everything.
--- this is the opposite of the 'Maybe' instance
-data Topped a = Only a | Top
-    deriving(Eq,Ord,Show)
-
--- the maybe instance creates a new bottom of nothing. note that (Just bottom) is a distinct point.
-instance Fixable a => Fixable (Topped a) where
-    isBottom (Only x) = isBottom x
-    isBottom Top = False
-    isTop Top = True
-    isTop _ = False
-    meet Top b = b
-    meet a Top = a
-    meet (Only a) (Only b) = Only (meet a b)
-    join Top b = Top
-    join a Top = Top
-    join (Only a) (Only b) = Only (join a b)
-    eq Top Top = True
-    eq (Only x) (Only y) = eq x y
-    eq _ _ = False
-    lte _ Top = True
-    lte Top _ = False
-    lte (Only x) (Only y) = x `lte` y

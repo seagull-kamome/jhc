@@ -8,7 +8,7 @@ module Util.UnionFindST(
     new, new_,
     find,
     getElements, getUnique,
-    getW, putW, updateW,
+    getWeight, putWeight, updateWeight,
     union, union_
     ) where
 
@@ -17,23 +17,16 @@ import Control.Monad.ST
 import Data.STRef
 
 -- ---------------------------------------------------------------------------
-
-data Element s w a = Element a !Int {-# UNPACK #-} !(STRef s (Link s w a))
+data Link s w a = Weight !Int !w ![Element s w a]
+                | Next !(Element s w a)
+data Element s w a
+  = Element { fromElement::a, elmKey:: !Int, elmLink:: !(STRef s (Link s w a)) }
 instance Eq (Element s w a) where
   Element _ x _ == Element _ y _ = x == y
 instance Ord (Element s w a) where
   Element _ x _ `compare` Element _ y _ = x `compare` y
 instance Show a => Show (Element s w a) where
     show = show . fromElement
-
-fromElement :: Element s w a -> a
-fromElement (Element a _ _) = a
-
-
--- ---------------------------------------------------------------------------
-
-data Link s w a = Weight !Int !w ![Element s w a]
-                | Next !(Element s w a)
 
 
 -- ---------------------------------------------------------------------------
@@ -44,13 +37,6 @@ newtype UF s a = UF { unUF :: ReaderT (STRef s Int) (ST s) a }
 runUF :: forall a . (forall s . UF s a)  -> a
 runUF st = runST $ newSTRef 0 >>= runReaderT (unUF st)
 
-newUnique' :: STRef s Int -> ST s Int
-newUnique' ref = do
-  u <- (+1) <$> readSTRef ref
-  writeSTRef ref u
-  return u
-
-
 
 new :: w -> a -> UF s (Element s w a)
 new w x = UF $ ask >>= \ref -> lift $ do
@@ -58,6 +44,13 @@ new w x = UF $ ask >>= \ref -> lift $ do
     ne <- Element x <$> newUnique' ref <*> pure r
     writeSTRef r (Weight 1 w [ne])
     return ne
+  where
+    newUnique' :: STRef s Int -> ST s Int
+    newUnique' ref = do
+      u <- (+1) <$> readSTRef ref
+      writeSTRef ref u
+      return u
+
 
 new_ ::  a -> UF s (Element s () a)
 new_ = new ()
@@ -80,39 +73,35 @@ find ::  Element s w a -> UF s (Element s w a)
 find = UF . lift . find'
 
 
-getW ::  Element s w a -> UF s w
-getW x = UF $ lift $ do
-    Element _ _ r <- find' x
-    Weight _ w _ <- readSTRef  r
+getWeight ::  Element s w a -> UF s w
+getWeight x = UF $ lift $ do
+    Weight _ w _ <- find' x >>= readSTRef . elmLink
     return w
 
 
 -- retrieve list of unified elements
 getElements :: Element s w a -> UF s [Element s w a]
 getElements x = UF $ lift $ do
-    Element _ _ r <- find' x
-    Weight _ _ es <- readSTRef  r
+    Weight _ _ es <- find' x >>= readSTRef . elmLink
     return es
 
 
 getUnique ::  Element s w a -> UF s Int
-getUnique x = do
-    Element _ u _ <- find x
-    return u
+getUnique x = elmKey <$> find x
 
 
 -- update w returning the old value
-updateW ::  (w -> w) -> Element s w a -> UF s w
-updateW f x = UF $ lift $ do
-    Element _ _ r <- find' x
-    Weight _ w _ <- readSTRef  r
+updateWeight ::  (w -> w) -> Element s w a -> UF s w
+updateWeight f x = UF $ lift $ do
+    r <- elmLink <$> find' x
+    Weight _ w _ <- readSTRef r
     modifySTRef r (\ (Weight s w' es) -> Weight s (f w') es)
     return w
 
 
 -- puts a new w, returning old value
-putW ::  Element s w a -> w -> UF s w
-putW e w = updateW (const w) e
+putWeight ::  Element s w a -> w -> UF s w
+putWeight e w = updateWeight (const w) e
 
 
 union ::  (w -> w -> w) -> Element s w a -> Element s w a -> UF s ()
