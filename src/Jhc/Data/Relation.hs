@@ -1,4 +1,4 @@
-module Util.Relation (
+module Jhc.Data.Relation (
   Relation, fromRelation,
   fromList, toList,
   empty, singleton, prune,
