@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Name.Name(
+#if 0
     Module(),
     Name,
     Class,
@@ -23,40 +24,42 @@ module Name.Name(
     quoteName,
     fromQuotedName,
     toModule,
-    FieldName,
-    ClassName,
-    combineName,
-    toUnqualified,
-    removeUniquifier,
+--    FieldName,
+--    ClassName,
+--    combineName,
+--    toUnqualified,
+--    removeUniquifier,
     -- new interface
-    unMkName,
-    mkName,
-    mkComplexName,
-    emptyNameParts,
-    mkNameType,
-    NameParts(..),
-    nameTyLevel_u,
-    nameTyLevel_s,
+--    unMkName,
+--    mkName,
+--    mkComplexName,
+--    emptyNameParts,
+--    mkNameType,
+--    NameParts(..),
+--    nameTyLevel_u,
+--    nameTyLevel_s,
     typeLevel,
     kindLevel,
     termLevel,
-    originalUnqualifiedName,
-    deconstructName
+--    originalUnqualifiedName,
+--    deconstructName
+#endif
     ) where
 
-import C.FFI
 import Data.Char (isUpper, isAlpha, isAlphaNum, isDigit)
--- import Doc.DocLike
--- import Doc.PPrint
+import Data.List (intercalate)
+import Data.Maybe (fromJust)
+
+
 import Text.PrettyPrint.ANSI.Leijen
-
-
+import C.FFI
 import GenUtil
-import Name.Internals
+import Name.Id
+--import Name.Internals
 import Name.Prim
 import StringTable.Atom
 import Ty.Level
-import Util.Std
+-- import Util.Std
 
 
 
@@ -66,7 +69,7 @@ isTypeNamespace TypeVal = True
 isTypeNamespace _ = False
 
 isValNamespace DataConstructor = True
-isValNamespace Val = True
+isValNamespace TermVal = True
 isValNamespace _ = False
 
 
@@ -75,6 +78,7 @@ isValNamespace _ = False
 -- name definiton
 -----------------
 
+#if 0
 -- should only be used for printing, the parser should know when things are in
 -- operator position or not.
 isOpLike :: Name -> Bool
@@ -158,7 +162,6 @@ parseName t name = toName t (intercalate "." ms, intercalate "." (ns ++ [last sn
 
 nameType :: Name -> NameType
 nameType name = snd $ nameToBits name
-
 instance Show Name where
     showsPrec _ n = f n where
         f (fromQuotedName -> Just n) = showChar '`' . f n
@@ -277,7 +280,7 @@ originalUnqualifiedName n = case unMkName n of
 instance HasTyLevel Name where
     getTyLevel n = f (nameType n) where
         f DataConstructor = Just termLevel
-        f Val             = Just termLevel
+        f TermVal         = Just termLevel
         f RawType         = Just typeLevel
         f TypeConstructor = Just typeLevel
         f TypeVal         = Just typeLevel
@@ -306,3 +309,4 @@ nameTyLevel_u f n = case getTyLevel n of
         where cl' = f cl
 
 removeUniquifier name = mkComplexName (unMkName name) { nameUniquifier = Nothing }
+#endif

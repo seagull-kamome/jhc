@@ -32,13 +32,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
 module Name.Id (
   IdKinds(..),
+  idKindIsConstructor,
   --
   ModuleName(..), toModuleName,
   --
-  Name(..), toName, forgeName, nameParts,
+  Name(..), toName, nameParts,
+  nameIsConstructor,
   --
   Id(..), IdSet, IdMap,
-  idKind
+  idKind, idIsConstructor
   ) where
 
 import Data.Set as SET
@@ -53,15 +55,23 @@ import qualified Data.Binary as BIN
 
 -- ---------------------------------------------------------------------------
 
+data IdKindUniv = KindLevelId | TypeLevelId | TermLevelId | UnknownLevelId
+  deriving (Eq, Show)
+
 data IdKinds
-  = Unknown
+  = UnknownType
   | TypeConstructor | DataConstructor
   | TypeVal | TermVal
   | ModuleName | ClassName | SortName | FieldLabel
   | RawType
-  | QuotedName
   deriving (Enum, Eq, Show, Generic)
 instance BIN.Binary IdKinds
+
+idKindIsConstructor :: IdKinds -> Bool
+idKindIsConstructor TypeConstructor = True
+idKindIsConstructor DataConstructor = True
+idKindIsConstructor _ = False
+
 
 -- ---------------------------------------------------------------------------
 
@@ -77,6 +87,15 @@ instance BIN.Binary ModuleName where
     0 -> UnqualifiedModuleName <$> (intern <$> BIN.get)
     1 -> QualifiedModuleName <$> BIN.get <*> (intern <$> BIN.get)
     _ -> undefined
+--instance IsString ModuleName where
+--  fromString xs = case span (/= '.') xs of
+--    (x1, "") -> UnqualifiedName $ intern x1
+--    (x1, x2) -> QualifiedName (intern x1) $ fromString x2
+--  {-# INLINE fromString #-}
+--  toString (UnqualifiedName x) = T.unpack $ unintern x
+--  toString (QualifiedName x y) = T.unpack (unintern x) ++ toString y
+--  {-# INLINE toString #-}
+
 
 toModuleName :: Maybe ModuleName -> T.Text -> ModuleName
 toModuleName Nothing = UnqualifiedModuleName . intern
@@ -101,15 +120,14 @@ toName :: Maybe ModuleName -> IdKinds ->T.Text -> Name
 toName Nothing k = UnqualifiedName k . intern
 toName (Just x) k = QualifiedName k x . intern
 
-forgeName :: ModuleName -> IdKinds -> T.Text -> Name
-forgeName m k = QualifiedName k m . intern
-
 
 nameParts :: Name -> (IdKinds, Maybe ModuleName, Name)
 nameParts x@(UnqualifiedName k _) = (k, Nothing, x)
 nameParts (QualifiedName k m b) = (k, Just m, UnqualifiedName k b)
 
 
+nameIsConstructor :: Name -> Bool
+nameIsConstructor x = idKindIsConstructor $ nameKind x
 
 -- ---------------------------------------------------------------------------
 
@@ -131,6 +149,11 @@ type IdMap a = MAP.Map Id a
 idKind :: Id  -> IdKinds
 idKind (NameId x) = nameKind x
 idKind (Id x _) = x
+
+idIsConstructor :: Id -> Bool
+idIsConstructor (NameId x) = nameIsConstructor x
+idIsConstructor (Id x _) = idKindIsConstructor x
+
 
 -- ---------------------------------------------------------------------------
 
