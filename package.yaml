@@ -26,6 +26,7 @@ dependencies:
 - text
 - mtl
 - containers
+- array
 - ansi-wl-pprint
 - pretty
 - filepath
@@ -47,6 +48,8 @@ library:
   - FlexibleInstances
   - GeneralizedNewtypeDeriving
   - TypeFamilies
+  dependencies:
+  - time
 
 
 executables:
