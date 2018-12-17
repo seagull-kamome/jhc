@@ -1,5 +1,5 @@
 -- simple constraint solver based on ideas from 'Once upon a polymorphic type' paper.
-module Util.UnionSolve(
+module Jhc.Solver.UnionSolve (
     C(),
     solve,
     Fixable(..),
@@ -19,7 +19,7 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as S
 import qualified Data.Set as Set
 
-import Util.UnionFind as UF
+import Jhc.Solver.UnionFind.IO as UF
 
 
 -- ---------------------------------------------------------------------------

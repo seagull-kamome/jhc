@@ -1,6 +1,5 @@
 module Jhc.Data.Interned.Text.Binary (InternedText(..)) where
 
-import qualified Data.Text as T
 import Data.Interned
 import Data.Binary
 import qualified Data.Interned.Text as IT

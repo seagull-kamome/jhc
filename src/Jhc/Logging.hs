@@ -30,33 +30,32 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
 module Jhc.Logging (
   LogSource, LogLevel(..), LogFunc (..),
   HasLogFunc(..),
   --
   defaultColor, defaultLogSend, defaultLogFunc, defaultTimestampFormatter,
-  setLogMinLevel, setLogUseColor, setLogSender, setLogFatalHook,
-  setLogExitOnFatal,setLogDiesOnFatal, setLogErrorOnFatal,
-  setLogColumn,
+  setLogUseTimestamp, setLogMinLevel, setLogUseColor, setLogTerminal,
+  setLogSender, setLogFatalHook,
+  setLogExitOnFatal,setLogDiesOnFatal, setLogErrorOnFatal, setLogColumn,
   --
   sendLog', sendLog,
   --
-  logDebug, logInfo, logNotice, logWarn, logError, logFatal
+  logDebug, logInfo, logNotice, logWarn, logError, logFatal,
+  --
+  MonadLogging(..),
+  logDebugM, logInfoM, logNoticeM, logWarnM, logErrorM, logFatalM
   ) where
 
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader.Class (MonadReader(..))
-import Control.Monad.State.Class (MonadState(..))
-import System.IO (Handle, stderr, hPutStrLn)
+import System.IO (Handle, stderr)
 import System.Exit (exitWith, ExitCode, die)
 
 import Data.Time.Clock (UTCTime, getCurrentTime)
-import Data.Time.Format (formatTime, TimeLocale, defaultTimeLocale)
+import Data.Time.Format (formatTime, defaultTimeLocale)
 import Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
 
 -- ---------------------------------------------------------------------------
