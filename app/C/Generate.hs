@@ -92,7 +92,7 @@ import qualified Data.Traversable as Seq
 
 import Text.PrettyPrint.ANSI.Leijen (Doc, empty, char, text, nest, (<+>), (<$$>), vcat, semi, lbrace, rbrace, tupled, equals, parens, brackets, hsep)
 
-import Control.Monad.Fresh
+import Control.Monad.Fresh.Flat
 
 import Util.Gen
 
