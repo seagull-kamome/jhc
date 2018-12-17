@@ -38,7 +38,8 @@ module Jhc.Logging (
   --
   defaultColor, defaultLogSend, defaultLogFunc, defaultTimestampFormatter,
   setLogMinLevel, setLogUseColor, setLogSender, setLogFatalHook,
-  setLogExitOnFatal,setLogDiesOnFatal, setLogColumn,
+  setLogExitOnFatal,setLogDiesOnFatal, setLogErrorOnFatal,
+  setLogColumn,
   --
   sendLog', sendLog,
   --
@@ -130,6 +131,7 @@ defaultColor LevelNotice = white
 defaultColor LevelWarn = dullred
 defaultColor LevelError = red
 defaultColor LevelFatal = red
+{-# INCLUDE defaultColor #-}
 
 defaultTimestampFormatter :: Maybe UTCTime -> Doc
 defaultTimestampFormatter Nothing = empty
@@ -159,24 +161,31 @@ defaultLogFunc = LogFunc {
 
 setLogMinLevel :: LogLevel -> LogFunc -> LogFunc
 setLogMinLevel x y = y { logMinLevel = x }
+{-# INLINE setLogMinLevel #-}
 
 setLogUseColor :: Bool -> LogFunc -> LogFunc
 setLogUseColor x y = y { logUseColor = x }
+{-# INLINE setLogUseColor #-}
 
 setLogColumn :: Maybe (Float, Int) -> LogFunc -> LogFunc
 setLogColumn x y = y { logColumn = x }
+{-# INLINE setLogColumn #-}
 
 setLogTerminal :: Bool -> LogFunc -> LogFunc
 setLogTerminal x y = y { logTerminal = x }
+{-# INLINE setLogTerminal #-}
 
 setLogUseTimestamp :: Bool -> LogFunc -> LogFunc
 setLogUseTimestamp x y = y { logUseTimestamp = x }
+{-# INLINE setLogUseTimestamp #-}
 
 setLogSender :: (Maybe UTCTime -> LogSource -> LogLevel -> Doc -> LogFunc -> IO ()) -> LogFunc -> LogFunc
 setLogSender x y = y { logSend = x }
+{-# INLINE setLogSender #-}
 
 setLogFatalHook :: (Doc -> IO ()) -> LogFunc -> LogFunc
 setLogFatalHook x y = y { logFatalHook = x }
+{-# INLINE setLogFatalHook #-}
 
 setLogExitOnFatal :: ExitCode -> LogFunc -> LogFunc
 setLogExitOnFatal ec y = y { logFatalHook = \x -> hPutDoc stderr x >> exitWith ec }
@@ -184,6 +193,8 @@ setLogExitOnFatal ec y = y { logFatalHook = \x -> hPutDoc stderr x >> exitWith e
 setLogDiesOnFatal :: LogFunc -> LogFunc
 setLogDiesOnFatal y = y { logFatalHook = \m -> die $ displayS (renderCompact $ plain m) "" }
 
+setLogErrorOnFatal :: LogFunc -> LogFunc
+setLogErrorOnFatal y = y { logFatalHook = \m -> error $ displayS (renderCompact $ plain m) "" }
 
 
 -- ---------------------------------------------------------------------------
@@ -207,11 +218,17 @@ sendLog src lvl msg = ask >>= sendLog' src lvl msg . getLogFunc
 logDebug, logInfo, logNotice, logWarn, logError, logFatal
   :: (MonadIO m, MonadReader env m, HasLogFunc env) => LogSource -> Doc -> m ()
 logDebug s = sendLog s LevelDebug
+{-# INLINE logDebug #-}
 logInfo s = sendLog s LevelInfo
+{-# INLINE logInfo #-}
 logNotice s = sendLog s LevelNotice
+{-# INLINE logNotice #-}
 logWarn s = sendLog s LevelWarn
+{-# INLINE logWarn #-}
 logError s = sendLog s LevelError
+{-# INLINE logError #-}
 logFatal s = sendLog s LevelFatal
+{-# INLINE logFatal #-}
 
 
 -- ---------------------------------------------------------------------------
@@ -219,11 +236,17 @@ logFatal s = sendLog s LevelFatal
 logDebugM, logInfoM, logNoticeM, logWarnM, logErrorM, logFatalM
   :: (MonadIO m, MonadLogging m) => LogSource -> Doc -> m ()
 logDebugM s m = getLogFuncM >>= liftIO . sendLog' s LevelDebug m
+{-# INLINE logDebugM #-}
 logInfoM s m = getLogFuncM >>= liftIO . sendLog' s LevelInfo m
+{-# INLINE logInfoM #-}
 logNoticeM s m = getLogFuncM >>= liftIO . sendLog' s LevelNotice m
+{-# INLINE logNoticeM #-}
 logWarnM s m = getLogFuncM >>= liftIO . sendLog' s LevelWarn m
+{-# INLINE logWarnM #-}
 logErrorM s m = getLogFuncM >>= liftIO . sendLog' s LevelError m
+{-# INLINE logErrorM #-}
 logFatalM s m = getLogFuncM >>= liftIO . sendLog' s LevelFatal m
+{-# INLINE logFatalM #-}
 
 
 
