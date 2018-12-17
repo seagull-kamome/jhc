@@ -32,10 +32,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
 module Control.Monad.Fresh.Flat (
   MonadFresh(..),
-  FreshT, Fresh,
+  FreshT, Fresh, FreshST,
 
   -- re-export Control.Monad.Fresh
   Fresh.runFreshT, Fresh.runFresh,
+  Fresh.runFreshST', Fresh.runFreshST, Fresh.liftST
   ) where
 
 import Control.Monad
@@ -48,16 +49,14 @@ import qualified Control.Monad.Fresh as Fresh
 
 class Monad m => MonadFresh m where fresh :: m Int
 instance MonadFresh IO where fresh = Fresh.fresh ()
-instance Monad m => MonadFresh (Fresh.FreshT () m) where
-  fresh = Fresh.fresh ()
+instance Monad m => MonadFresh (Fresh.FreshT () m) where fresh = Fresh.fresh ()
+instance MonadFresh (Fresh.FreshST () s) where fresh = Fresh.fresh ()
 
 type FreshT = Fresh.FreshT ()
 type Fresh = Fresh.FreshT () Identity
+type FreshST = Fresh.FreshST ()
 
 -- ---------------------------------------------------------------------------
-
-
-
 
 -- vim: ts=8 sw=2 expandtab :
 

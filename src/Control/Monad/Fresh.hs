@@ -34,11 +34,18 @@ module Control.Monad.Fresh (
   MonadFresh(..),
   FreshT, Fresh,
   runFreshT, runFresh,
+  --
+  FreshST,
+  runFreshST', runFreshST,
+  liftST
   ) where
 
 import Control.Monad
 import Control.Monad.State.Strict
+import Control.Monad.Reader
 import Control.Monad.Identity
+import Control.Monad.ST.Strict (ST, runST)
+import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
 import Data.Unique (hashUnique, newUnique)
 import Data.Ix
 
@@ -79,6 +86,28 @@ runFresh :: (Enum univ, Bounded univ, Ix univ) => Fresh univ r -> Int -> r
 runFresh x n = runIdentity $ runFreshT x n
 
 -- ---------------------------------------------------------------------------
+
+newtype FreshST univ s r = FreshST (ReaderT (STRef s (AR.UArray univ Int)) (ST s) r)
+  deriving (Functor, Applicative, Monad)
+
+instance Ix univ => MonadFresh univ (FreshST univ s) where
+  fresh u = FreshST $ ask >>= lift . \v -> do
+    xs <- readSTRef v
+    let n = xs AR.! u
+    writeSTRef v $ xs AR.// [(u, n + 1)]
+    return n
+
+runFreshST' :: (Enum univ, Bounded univ, Ix univ) => FreshST univ s r -> Int -> ST s r
+runFreshST' (FreshST x) n = do
+  v <- newSTRef $ AR.array (minBound, maxBound) [ (x, n) | x <- [minBound .. maxBound] ]
+  runReaderT x v
+
+
+runFreshST :: (Enum univ, Bounded univ, Ix univ) => (forall s. FreshST univ s r) -> Int -> r
+runFreshST x n = runST $ runFreshST' x n
+
+liftST :: ST s r -> FreshST univ s r
+liftST = FreshST . lift
 
 -- vim: ts=8 sw=2 expandtab :
 
