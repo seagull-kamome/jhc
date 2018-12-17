@@ -30,55 +30,34 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
-module Control.Monad.Fresh (
+module Control.Monad.Fresh.Flat (
   MonadFresh(..),
   FreshT, Fresh,
-  runFreshT, runFresh,
+
+  -- re-export Control.Monad.Fresh
+  Fresh.runFreshT, Fresh.runFresh,
   ) where
 
 import Control.Monad
-import Control.Monad.State.Strict
 import Control.Monad.Identity
 import Data.Unique (hashUnique, newUnique)
-import Data.Ix
-
-import qualified Data.Array.Unboxed as AR
-
+import qualified Control.Monad.Fresh as Fresh
 
 -- ---------------------------------------------------------------------------
--- ! FreshMonad produce unique value on its space, for each fresh call.
+-- Same as MonadFresh but not naming universe.
 
-class Monad m => MonadFresh univ m | m -> univ where
-  fresh :: univ -> m Int
+class Monad m => MonadFresh m where fresh :: m Int
+instance MonadFresh IO where fresh = Fresh.fresh ()
+instance Monad m => MonadFresh (Fresh.FreshT () m) where
+  fresh = Fresh.fresh ()
 
-instance MonadFresh () IO where
-  fresh _ = hashUnique <$> newUnique
-
--- ---------------------------------------------------------------------------
-
-newtype FreshT univ m r = FreshT (StateT (AR.UArray univ Int) m r)
-  deriving (Functor, Applicative, Monad)
-type Fresh univ = FreshT univ Identity
-
-instance MonadTrans (FreshT univ) where lift = FreshT . lift
-instance MonadIO m => MonadIO (FreshT univ m) where liftIO = FreshT . liftIO
-
-instance (Ix univ, Monad m) => MonadFresh univ (FreshT univ m) where
-  fresh u = FreshT $ do
-    xs <- get
-    let n = xs AR.! u
-    put $ xs AR.// [(u, n + 1)]
-    return n
-
-
-runFreshT :: (Enum univ, Bounded univ, Ix univ, Monad m) => FreshT univ m r -> Int -> m r
-runFreshT (FreshT st) n = evalStateT st $
-  AR.array (minBound, maxBound) [ (x, n) | x <- [minBound .. maxBound] ]
-
-runFresh :: (Enum univ, Bounded univ, Ix univ) => Fresh univ r -> Int -> r
-runFresh x n = runIdentity $ runFreshT x n
+type FreshT = Fresh.FreshT ()
+type Fresh = Fresh.FreshT () Identity
 
 -- ---------------------------------------------------------------------------
+
+
+
 
 -- vim: ts=8 sw=2 expandtab :
 
