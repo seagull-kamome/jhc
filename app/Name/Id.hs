@@ -131,7 +131,7 @@ nameIsConstructor x = idKindIsConstructor $ nameKind x
 
 -- ---------------------------------------------------------------------------
 
-data Id = NameId Name | Id !IdKinds !Int
+data Id = NameId !Name | Id !IdKinds !Int
   deriving (Show, Eq)
 instance BIN.Binary Id where
   put (NameId x) = BIN.putWord8 0 >> BIN.put x
