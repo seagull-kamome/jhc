@@ -40,7 +40,7 @@ module Control.Monad.Fresh (
   liftST
   ) where
 
-import Control.Monad
+--import Control.Monad
 import Control.Monad.State.Strict
 import Control.Monad.Reader
 import Control.Monad.Identity
@@ -98,9 +98,9 @@ instance Ix univ => MonadFresh univ (FreshST univ s) where
     return n
 
 runFreshST' :: (Enum univ, Bounded univ, Ix univ) => FreshST univ s r -> Int -> ST s r
-runFreshST' (FreshST x) n = do
-  v <- newSTRef $ AR.array (minBound, maxBound) [ (x, n) | x <- [minBound .. maxBound] ]
-  runReaderT x v
+runFreshST' (FreshST x) n =
+  newSTRef (AR.array (minBound, maxBound) [ (k, n) | k <- [minBound .. maxBound] ])
+    >>= runReaderT x
 
 
 runFreshST :: (Enum univ, Bounded univ, Ix univ) => (forall s. FreshST univ s r) -> Int -> r

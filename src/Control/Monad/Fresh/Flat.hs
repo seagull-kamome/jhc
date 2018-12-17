@@ -39,9 +39,7 @@ module Control.Monad.Fresh.Flat (
   Fresh.runFreshST', Fresh.runFreshST, Fresh.liftST
   ) where
 
-import Control.Monad
 import Control.Monad.Identity
-import Data.Unique (hashUnique, newUnique)
 import qualified Control.Monad.Fresh as Fresh
 
 -- ---------------------------------------------------------------------------
