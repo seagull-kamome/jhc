@@ -10,7 +10,6 @@ module Jhc.Solver.UnionFind.IO (
     ) where
 
 import Control.Monad.Trans
-import Control.Monad.IO.Class
 import Data.IORef
 import Control.Monad (when)
 
