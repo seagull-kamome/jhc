@@ -34,15 +34,20 @@ module Options(
     flagOpt
     ) where
 
+import Data.Maybe (fromMaybe)
+import Control.Monad (forM_)
 import Control.Monad.Error()    -- IO MonadPlus instance
 import Control.Monad.Reader
 import Data.Char
-import Data.Yaml.Syck
-import System
+
+import qualified Data.Yaml as YAML
+--import Data.Yaml.Syck
+--import System
 import System.Console.GetOpt
 import System.Directory
 import System.IO.Unsafe
-import Util.Std
+import System.Environment (getArgs, lookupEnv)
+--import Util.Std
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.UTF8 as BS
@@ -54,19 +59,17 @@ import qualified System.FilePath as FP
 
 import Options.Map
 import Options.Type
-import RawFiles(prelude_m4)
-import RawFiles(targets_ini)
+--import RawFiles(prelude_m4)
+--import RawFiles(targets_ini)
 import Support.IniParse
 import Support.TempDir
 import Util.ExitCodes
 import Util.FilterInput
 import Util.Gen
-import Util.YAML
-import Version.Config
-import Version.Version(versionString,versionContext)
+--import Util.YAML
+import qualified Version (versionText, libraryInstall, libDir, dataDir)
 import qualified FlagDump as FD
 import qualified FlagOpts as FO
-import qualified Version.Config as VC
 
 {-@CrossCompilation
 
@@ -170,40 +173,56 @@ Define                             Meaning
 
 -}
 
+
+getArguments :: IO [String]
 getArguments = do
-    x <- lookupEnv "JHC_OPTS"
-    let eas = maybe [] words x
-    as <- System.getArgs
-    return (eas ++ as)
+  eas <- maybe [] words <$> lookupEnv "JHC_OPTS"
+  as <- System.getArgs
+  return (eas ++ as)
+
+
+
 
 {-# NOINLINE processOptions #-}
 -- | Parse commandline options.
 processOptions :: IO Opt
 processOptions = do
-    -- initial argument processing
-    argv <- getArguments
-    let (o,ns,rc) = getOpt Permute theoptions argv
-    optColumns <- getColumns
-    optIncdirs <- initialIncludes
-    optHlPath <- initialLibIncludes
-    o <- return (foldl (flip ($)) emptyOpt { optColumns, optIncdirs, optHlPath } o)
+    -- options from environment
+    optColumns <- maybe 80 (maybe Nothing readMaybe) <$> lookupEnv "COLUMNS"
+    optIncdirs <- (".":) . maybe [] (tokens (== ':')) <$> lookupEnv "JHC_PATH"
+    optHlPath <- do
+      ps <- maybe [] (tokens (':' ==)) <$> lookupEnv "JHC_LIBRARY_PATH"
+      h <- lookupEnv "HOME"
+      let vers = ["/jhc-" ++ Version.shortVersion, "/jhc"]
+      let lpath = nub $ ps
+            ++ [ p ++ b ++ v |
+                 p <- fromMaybe [] h ++ ["/usr/local", "/usr"],
+                 b <- ["/lib", "/share"],
+                 v <- vers ]
+            ++ [ d ++ v | d <- [Version.libDir, Version.dataDir], v <- vers]
+            ++ [Version.libraryInstall]
+      return $ if "." `elem` ps then lpath else ".":lpath
+    -- from command-line arguments
+    (o,ns,rc) <- getArguments >>= getOpt Permute theoptions
+    let o = (foldl (flip ($)) (dft :: Opt) { optColumns, optIncdirs, optHlPath } o)
+    --
     when (rc /= []) $ putErrLn (concat rc ++ helpUsage) >> exitWith exitCodeUsage
     let (nset,errs) = processLanguageFlags (reverse $ optExtensions o) (optFOptsSet o)
-    o <- return $ o { optFOptsSet = nset }
-    unless (null errs) $ do
-        putErrLn $ "Unrecognized -X flags: " ++  concatMap (' ':) errs
+    let o = o { optFOptsSet = nset }
+    unless (null errs) $ putErrLn $ unwords ("Unrecognized -X flags: " : errs)
 
     case optStop o of
-        StopError s -> putErrLn "bad option passed to --stop should be one of parse, deps, typecheck, or c" >> exitWith exitCodeUsage
-        _ -> return ()
+      StopError s -> putErrLn "bad option passed to --stop should be one of parse, deps, typecheck, or c" >> exitWith exitCodeUsage
+      _ -> return ()
+
     -- set temporary directory
-    maybeDo $ do x <- optWorkDir o; return $ setTempDir x
+    maybe (return ()) setTempDir $ optWorkDir o
+
     let readYaml o fp = do
-            when (dopts' o FD.Progress) $ putStrLn $ "Reading " ++ fp
-            snd <$> readYamlOpts o fp
+          when (Set.member FD.Progress (optDumpSet o)) $ putStrLn $ "Reading " ++ fp
+          snd <$> readYamlOpts o fp
     o <- foldM readYaml o (optWith o)
     case optMode o of
-        -- ShowHelp  | optVerbose o > 0  -> putStrLn prettyOptions >> exitSuccess
         ShowHelp    -> putStrLn helpUsage >> exitSuccess
         Version   | optVerbose o > 0  -> putStrLn (versionString ++ BS.toString versionContext) >> exitSuccess
         Version     -> putStrLn versionString >> exitSuccess
@@ -211,12 +230,13 @@ processOptions = do
             putStrLn $ "-I" ++ VC.datadir ++ "/" ++ VC.package ++ "-" ++ VC.shortVersion ++ "/include"
             exitSuccess
         _ -> return ()
+
     -- read targets.ini file
-    Just home <- fmap (`mplus` Just "/") $ lookupEnv "HOME"
+    home <- fromMaybe "/" <$> lookupEnv "HOME"
     inis <- parseIniFiles (optVerbose o > 0) (BS.toString targets_ini) [confDir ++ "/targets.ini", confDir ++ "/targets-local.ini", home ++ "/etc/jhc/targets.ini", home ++ "/.jhc/targets.ini"] (optArch o)
     -- process dump flags
     o <- either putErrDie return $ postProcessFD o
-    when (FD.Ini `S.member` optDumpSet o) $ flip mapM_ (M.toList inis) $ \(a,b) -> putStrLn (a ++ "=" ++ b)
+    when (Set.member FD.Ini (optDumpSet o)) $ forM_ (Map.toList inis) $ \(a,b) -> putStrLn (a ++ "=" ++ b)
     -- set flags based on ini options
     let o1 = case M.lookup "gc" inis of
             Just "jgc" -> optFOptsSet_u (S.insert FO.Jgc) o
@@ -243,10 +263,10 @@ findHoCache :: IO (Maybe FilePath)
 findHoCache = do
     cd <- lookupEnv "JHC_CACHE"
     case optHoCache options `mplus` cd of
-        Just "-" -> do return Nothing
-        Just s -> do return (Just s)
+        Just "-" -> return Nothing
+        Just s -> return (Just s)
         Nothing | isNothing (optHoDir options) -> do
-            Just home <- fmap (`mplus` Just "/") $ lookupEnv "HOME"
+            home <- fromMaybe "/" <$> lookupEnv "HOME"
             let cd = home ++ "/.jhc/cache"
             createDirectoryIfMissing True cd
             return (Just cd)
@@ -271,10 +291,6 @@ doShowConfig opt@Opt { .. } = do
         ]
     exitSuccess
 
-instance ToNode FO.Flag where
-    toNode = toNode . show
-instance ToNode FD.Flag where
-    toNode = toNode . show
 
 {-# NOINLINE options #-}
 -- | The global options currently used.
@@ -320,9 +336,6 @@ wdump f = when (dump f)
 -- | Test whether an option flag is set.
 fopts' :: Opt -> FO.Flag -> Bool
 fopts' opt s = s `S.member` optFOptsSet opt
--- | Test whether an option flag is set.
-dopts' :: Opt -> FD.Flag -> Bool
-dopts' opt s = s `S.member` optDumpSet opt
 -- | Do the action when the suplied dump flag is set.
 wdump' :: (Monad m) => Opt -> FD.Flag -> m () -> m ()
 wdump' opt f = when $ f `S.member` optDumpSet opt
@@ -367,30 +380,9 @@ getArgString = do
 --prettyOptions :: Opt -> String
 --prettyOptions _ = ""
 
--- | Width of terminal.
-getColumns :: IO Int
-getColumns = do
-    mcol <- lookupEnv "COLUMNS"
-    return $ fromMaybe 80 (mcol >>= readM)
 
--- | Include directories taken from JHCPATH enviroment variable.
-initialIncludes :: IO [String]
-initialIncludes = do
-    p <- lookupEnv "JHC_PATH"
-    let x = fromMaybe "" p
-    return (".":(tokens (== ':') x))
 
--- | Include directories taken from JHCLIBPATH enviroment variable.
-initialLibIncludes :: IO [String]
-initialLibIncludes = do
-    ps <- lookupEnv "JHC_LIBRARY_PATH"
-    h <- lookupEnv "HOME"
-    let paths = h ++ ["/usr/local","/usr"]
-        bases = ["/lib","/share"]
-        vers = ["/jhc-" ++ shortVersion, "/jhc"]
-    let lpath = nub $ maybe [] (tokens (':' ==))  ps ++ [ p ++ b ++ v | p <- paths, v <- vers, b <- bases ]
-               ++ [d ++ v | d <- [libdir,datadir], v <- vers] ++ [libraryInstall]
-    return $ if "." `elem` lpath then lpath else ".":lpath
+
 
 data LibDesc = LibDesc (Map.Map String [String]) (Map.Map String String)
     deriving(Show)
@@ -413,31 +405,35 @@ readDescFile origOpt fp = do
         (FP.takeExtension -> ".yaml",".m4") -> doYaml origOpt { optFOptsSet = FO.M4 `Set.insert` optFOptsSet origOpt }
         _ -> putErrDie $ "Do not recoginize description file type: " ++ fp
 
+
+
+
+
 readYamlOpts :: Opt -> FilePath -> IO (LibDesc,Opt)
 readYamlOpts origOpt@Opt { .. } fp = do
     ld@(LibDesc dlist dsing) <- readDescFile origOpt fp
 
-    let mfield x = maybe [] id $ Map.lookup x dlist
+    let mfield x = fromMaybe [] $ Map.lookup x dlist
         dd "." = FP.takeDirectory fp
         dd ('.':'/':x) = dd x
         dd x = FP.takeDirectory fp FP.</> x
     (optFOptsSet,errs) <- return $ processLanguageFlags (mfield "extensions") optFOptsSet
     unless (null errs) $ do
-        putErrLn $ "---"
+        putErrLn "---"
         putErrLn $ fp ++ ":Unrecognized extensions" ++  show errs
     optIncdirs <- return $ map dd (mfield "hs-source-dirs") ++ optIncdirs
     optIncs <- return $ map dd (mfield "include-dirs") ++ optIncs
     optHls <- return $ optHls ++ reverse (mfield "build-depends")
-    let nopt = Opt { .. }
-    let fileOpts = fileOptions nopt (mfield "options")
-    bopt <- case fileOpts of
+    bopt <- case fileOptions nopt (mfield "options") of
         Left errs -> do
-            putErrLn $ "---"
+            putErrLn "---"
             putErrLn $ fp ++ ":Unrecognized options" ++  show (mfield "options")
-            putErrLn $ errs
-            return nopt
+            putErrLn errs
+            return $ Opt {..}
         Right o -> return o
     return (ld,bopt)
+
+
 
 preprocess :: Opt -> FilePath -> LBS.ByteString -> IO LBS.ByteString
 preprocess opt fn lbs = do
@@ -479,12 +475,11 @@ list_fields = Set.fromList $ [
       ++ map snd alias_fields
 
 alias_fields = [
- --  ("other-modules","hidden-modules"),
    ("exported-modules","exposed-modules"),
    ("hs-source-dir","hs-source-dirs")
    ]
 
-combineAliases mp = f alias_fields mp where
+combineAliases = f alias_fields where
     f [] mp = mp
     f ((x,y):rs) mp = case Map.lookup x mp of
         Nothing -> f rs mp
@@ -498,3 +493,6 @@ optionLibs options = nub $ if optNoAuto options
         proc rs ("_auto_":xs) = proc (optAutoLoads options ++ rs) xs
         proc rs (x:xs) = proc (x:rs) xs
         proc rs [] = rs
+
+-- vim: ts=8 sw=2 expandtab :
+
