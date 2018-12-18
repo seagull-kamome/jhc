@@ -2,8 +2,6 @@
 module Jhc.Solver.UnionSolve (
     C(),
     solve,
-    Fixable(..),
-    Topped(..),
     Result(..),
     cAnnotate,
     islte,isgte,equals,
@@ -19,106 +17,11 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as S
 import qualified Data.Set as Set
 
+import Jhc.Solver.Fixer.Fixable (Fixable(..))
 import Jhc.Solver.UnionFind.IO as UF
 
 
 -- ---------------------------------------------------------------------------
-
-class Fixable a where
-  -- determine if we are at the top or bottom of the lattice, we can
-  -- solidify bounds if we know we are at an endpoint.
-  isBottom :: a -> Bool
-  isTop :: a -> Bool
-  -- lattice operators
-  join :: a -> a -> a
-  meet :: a -> a -> a
-  eq :: a -> a -> Bool
-  lte :: a -> a -> Bool
-  showFixable :: a -> String -- used for debugging
-
-  isBottom _ = False
-  isTop _ = False
-  eq x y = lte x y && lte y x
-  showFixable x | isBottom x = "B"
-                | isTop x = "T"
-                | otherwise = "*"
-
--- ---------------------------------------------------------------------------
-
-instance Ord n => Fixable (Set.Set n)  where
-  isBottom = Set.null
-  join = Set.union
-  meet = Set.intersection
-  lte = Set.isSubsetOf
-  eq = (==)
-
-
-
-instance Fixable Bool where
-  isBottom = not
-  isTop = id
-  join = (||)
-  meet = (&&)
-  eq = (==)
-  lte = (<=)
-
-
-
--- join is the maximum of integer values, as in this is the lattice of maximum, not the additive one.
-instance Fixable Int where { join = max; meet = min; lte = (<=); eq = (==) }
-
-
-instance (Fixable a,Fixable b) => Fixable (a,b) where
-  isBottom (a,b) = isBottom a && isBottom b
-  isTop (a,b) = isTop a && isTop b
-  join (x,y) (x',y') = (join x x', join y y')
-  meet (x,y) (x',y') = (meet x x', meet y y')
-  lte (x,y) (x',y') = lte x x' && lte y y'
-  eq (x,y) (x',y') = eq x x' && eq y y'
-
-
-
--- the maybe instance creates a new bottom of nothing. note that (Just bottom) is a distinct point.
-instance Fixable a => Fixable (Maybe a) where
-    isBottom = isNothing
-    isTop = maybe False isTop
-    join Nothing b = b
-    join a Nothing = a
-    join (Just a) (Just b) = Just (join a b)
-    meet Nothing b = Nothing
-    meet a Nothing = Nothing
-    meet (Just a) (Just b) = Just (meet a b)
-    lte Nothing _ = True
-    lte _ Nothing = False
-    lte (Just x) (Just y) = x `lte` y
-
-
-
--- the topped instance creates a new top of everything.
--- this is the opposite of the 'Maybe' instance
-data Topped a = Only a | Top deriving(Eq,Ord,Show)
-
--- the maybe instance creates a new bottom of nothing. note that (Just bottom) is a distinct point.
-instance Fixable a => Fixable (Topped a) where
-    isBottom (Only x) = isBottom x
-    isBottom Top = False
-    isTop Top = True
-    isTop _ = False
-    meet Top b = b
-    meet a Top = a
-    meet (Only a) (Only b) = Only (meet a b)
-    join Top b = Top
-    join a Top = Top
-    join (Only a) (Only b) = Only (join a b)
-    eq Top Top = True
-    eq (Only x) (Only y) = eq x y
-    eq _ _ = False
-    lte _ Top = True
-    lte Top _ = False
-    lte (Only x) (Only y) = x `lte` y
-
--- ---------------------------------------------------------------------------
-
 
 -- arguments are the lattice and the variable type
 -- mappended together when used in a writer monad.
