@@ -12,7 +12,10 @@ import Data.IORef
 import Data.Typeable
 import qualified Data.Map as Map
 
+import qualified Jhc.Logging as LOG
+import Jhc.Solver.Fixer.Fixer
 import Jhc.Solver.Fixer.Fixable
+
 
 -- maps b's to values of a's, creating them as needed.
 
@@ -24,7 +27,7 @@ newSupply fixer = liftIO $ do
     ref <- newIORef Map.empty
     return $ Supply fixer ref
 
-supplyValue :: (MonadIO m, Ord b, Fixable a) => Supply b a -> b -> m (Value a)
+supplyValue :: (MonadIO m, Ord b, HasBottom a, Fixable a) => Supply b a -> b -> m (Value a)
 supplyValue (Supply fixer ref) b = liftIO $ do
     mp <- readIORef ref
     case Map.lookup b mp of
@@ -34,17 +37,23 @@ supplyValue (Supply fixer ref) b = liftIO $ do
             modifyIORef ref (Map.insert b v)
             return v
 
-sValue :: (Ord b, Fixable a) => Supply b a -> b -> (Value a)
-sValue s b = ioValue (supplyValue s b)
+sValue :: (Ord b, HasBottom a, Fixable a) => Supply b a -> b -> (Value a)
+sValue s b = IOValue (supplyValue s b)
 
-supplyReadValues :: (Fixable a,MonadIO m) => Supply b a -> m [(b,a)]
-supplyReadValues (Supply _fixer ref) = liftIO $ do
-    mp <- readIORef ref
+supplyReadValues :: (Fixable a, MonadIO m, LOG.MonadLogging m) => Supply b a -> m [(b,a)]
+supplyReadValues (Supply _fixer ref) = do
+    mp <- liftIO $ readIORef ref
     flip mapM (Map.toList mp) $ \ (b,va) -> do
         a <- readValue va
         return (b,a)
 
-readSValue :: (MonadIO m, Ord b, Fixable a) => Supply b a -> b -> m a
+readSValue :: (MonadIO m, LOG.MonadLogging m, Ord b, HasBottom a, Fixable a)
+           => Supply b a -> b -> m a
 readSValue s b = do
     v <- supplyValue s b
     readValue v
+
+
+
+-- vim: ts=8 sw=2 expandtab :
+

@@ -526,7 +526,8 @@ shellQuote ss = unwords (map f ss) where
     f s | any (not . isGood) s || null s  = "'" ++ dquote s ++ "'"
     f s = s
     dquote s = concatMap (\c -> if c == '\'' then "'\\''" else [c]) s
-    isGood c = isAlphaNum c || c `elem` "@/.-_"
+    isGood :: Char -> Bool
+    isGood c = isAlphaNum c || elem c ("@/.-_" :: String)
 
 -- | looks up an enviornment variable and returns it in an arbitrary Monad rather
 -- than raising an exception if the variable is not set.
