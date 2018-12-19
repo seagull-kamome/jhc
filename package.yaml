@@ -100,9 +100,9 @@ executables:
     - BinaryLiterals
     dependencies:
     - binary
-    - jhc = 0.8.2
+    - jhc == 0.8.2.0
     - jhc-logger
-    - jhc-solver = 0.8.2
+    - jhc-solver == 0.8.2.0
     - monad-freshid
 
 tests:
