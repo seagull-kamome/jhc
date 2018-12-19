@@ -64,7 +64,6 @@ dependencies:
 - containers-missing
 - data-default
 - intern
-- monad-freshid
 
 
 
@@ -100,8 +99,11 @@ executables:
     - TupleSections
     - BinaryLiterals
     dependencies:
-    - jhc
     - binary
+    - jhc
+    - jhc-logger
+    - jhc-solver
+    - monad-freshid
 
 tests:
   jhc-test:

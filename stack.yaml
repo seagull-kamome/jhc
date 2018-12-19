@@ -36,6 +36,8 @@ resolver: lts-12.19
 packages:
 - .
 - pkgs/monad-freshid
+- pkgs/jhc-solvers
+- pkgs/jhc-logger
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
