@@ -1,0 +1,5 @@
+
+
+- support contextual renaming monad. AKA hash-consing
+- add name conversion. to support convert id into funcy name like x,y or f,g .
+

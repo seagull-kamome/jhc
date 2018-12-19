@@ -35,14 +35,14 @@ resolver: lts-12.19
 #  - wai
 packages:
 - .
+- pkgs/monad-freshid
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- ../containers-missing
-#- github: seagull-kamome/containers-missing
-#  commit: HEAD
+- github: seagull-kamome/containers-missing
+  commit: 01b70448cef96bb238a0c419966da9b35634acb3
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
