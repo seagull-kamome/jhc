@@ -1,27 +1,30 @@
-module FindFixpoint(Ms, getVal, solve) where
+module Jhc.Solver.FindFixpoint(Ms, getVal, solve) where
 
-import Array
-import Control.Monad.Writer
+import Data.Array
 import Data.Array.IO
 import Data.Graph
-import Data.IntSet as IntSet
-import Util.Gen
+import qualified Data.IntSet as IntSet
+-- import Util.Gen
+import Control.Monad
 
-data Env b  = Env {-# UNPACK #-} !(IOArray Int b) {-# UNPACK #-} !(IOArray Int (IntSet)) {-# UNPACK #-} !Int
+data Env b  = Env {-# UNPACK #-} !(IOArray Int b) {-# UNPACK #-} !(IOArray Int (IntSet.IntSet)) {-# UNPACK #-} !Int
 newtype Ms b c = Ms' (Env b -> IO c)
-
-instance Monad (Ms b) where
-    return a = Ms' (\_ -> return a)
-    Ms' comp >>= fun
-        = Ms' (\v  -> comp v >>= \r -> case fun r   of Ms' x -> x v)
-    Ms' a >> Ms' b = Ms' $ \v -> a v >> b v
-    fail x = Ms' (\_ -> (putErrDie x))
-    {-# INLINE (>>) #-}
-    {-# INLINE (>>=) #-}
-    {-# INLINE return #-}
 
 instance Functor (Ms b) where
     fmap = liftM
+
+instance Applicative (Ms b) where
+  pure a =  Ms' (\_ -> return a)
+  {-# INLINE pure #-}
+  (Ms' f) <*> (Ms' x) = Ms' $ \env -> f env <*> x env
+  {-# INLINE (<*>) #-}
+
+
+instance Monad (Ms b) where
+    Ms' a >> Ms' b = Ms' $ \v -> a v >> b v
+    fail x = Ms' (\_ -> (error x))
+    {-# INLINE (>>) #-}
+
 
 unMs' (Ms' x) = x
 
@@ -35,10 +38,10 @@ getVal n = Ms' $ \(Env arr ref self) ->  do
 solve :: (Eq b) => Maybe String -> b -> [Ms b b] -> IO [b]
 solve str' empty vs = do
     let put = case str' of
-            Just _ -> putErrLn
+            Just _ -> error
             Nothing -> const (return ())
         put' = case str' of
-            Just _ -> putErr
+            Just _ -> error
             Nothing -> const (return ())
         Just str = str'
     let len = length vs
@@ -46,7 +49,7 @@ solve str' empty vs = do
     arr <- newArray (0,len - 1) empty
     ref <- newArray (0,len - 1) IntSet.empty
     let as = [ (i,(unMs' f) (Env arr ref i))  |  f <- vs | i <- [0..]]
-        fna = listArray (0,len - 1) (snds as)
+        fna = listArray (0,len - 1) $ map snd as
     let li [] s | IntSet.null s  = return ()
         --li xs [] n = CharIO.putErr ("[" ++ show (I# n) ++ "]") >>   li xs xs 0#
         li [] s = do
@@ -60,7 +63,7 @@ solve str' empty vs = do
             li (reverse xs) IntSet.empty
         li (i:rs) s = do
             b <- readArray arr i
-            b'<- fna Array.! i
+            b'<- fna ! i
             case b == b' of
                 True -> li rs (IntSet.delete i s)
                 False -> do
