@@ -79,8 +79,8 @@ instance Ord MkFixable where
 
 
 data Fixer  = Fixer {
-    vars :: {-# UNPACK #-} !(IORef [MkFixable]),
-    todo :: {-# UNPACK #-} !(IORef (Set.Set MkFixable))
+  vars :: {-# UNPACK #-} !(IORef [MkFixable]),
+  todo :: {-# UNPACK #-} !(IORef (Set.Set MkFixable))
   }
 
 
@@ -126,11 +126,11 @@ newValue fixer@Fixer { vars = vars } v = liftIO $ do
     return $ IV rv
 
 
-addAction :: Fixable a => Value a -> (a -> IO ())  -> IO ()
-addAction (ConstValue n) act = act n
-addAction (UnionValue a b) act = addAction a act >> addAction b act
-addAction (IOValue v) act = v >>= (`addAction` act)
-addAction (IV v) act = do
+addAction :: (MonadIO m, Fixable a) => Value a -> (a -> IO ())  -> m ()
+addAction (ConstValue n) act = liftIO $ act n
+addAction (UnionValue a b) act = liftIO $ (addAction a act >> addAction b act)
+addAction (IOValue v) act = liftIO $ (v >>= (`addAction` act))
+addAction (IV v) act = liftIO $ do
     modifyIORef (action v) (act:)
     c <- readIORef (current v)
     unless (isBottom c) (act c)
