@@ -12,6 +12,7 @@ import Text.PrettyPrint.ANSI.Leojen hiding((<$>))
 data TagType = Tag'f | Tag'C | Tag'P | Tag'F | Tag'b | Tag'B | Tag'T | Tag'Y
 
 data Tag'' (tagtyp :: 'TagType) sym where
+  TagHole :: Tag'' anytype sym
   TagDataCons {- C -} :: { tagName :: !sym } -> Tag'' Tag'C sym
   TagFunc {- f -} :: { tagName :: !sym } -> Tag'' Tag'f sym
   TagPApp {- P -} :: { tagUnfunction :: !(Tag'' Tag'f sym), tagNeededArgs :: !Word {- /=0 -} } -> Tag'' Tag'P sym
@@ -27,6 +28,7 @@ newtype Tag sym = Tag { tagUnwrap :: forall (tagtyp :: TagType). Tag tagtyp sym 
 
 
 instance Pretty sym => Pretty (Tag'' _ sym) where
+  pretty TabHole         = "@hole"
   pretty (TagDataCons x} = "C" <> pretty x
   pretty (TagFunc x)     = "f" <> pretty y
   pretty (TagPApp x n)   = "P" <> int n <> "_" <> pretty (tagName x)
@@ -35,6 +37,8 @@ instance Pretty sym => Pretty (Tag'' _ sym) where
   pretty (TagSusp' x _)  = "B" <> pretty (tagName x)
   pretty (TagTypeCons x) = "T" <> pretty x
   pretty (TagTypePApp x _) = "V" <> pretty (tagName x)
+
+
 
 -- ---------------------------------------------------------------------------
 -- Decide tag types.

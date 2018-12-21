@@ -1,10 +1,11 @@
 module Language.Grin.AST.Type (
-  Callable, Typ''(..), Typ(..)
+  Callable, Typ''(..), Typ(..),
+  TypeThunk(..)
   ) where
 
 
 -- ---------------------------------------------------------------------------
--- | Type of GRIN terms
+-- | Type Universe of GRIN
 
 data Callable = Continuation | Function | Closure | LocalFunction | Primitive'
   deriving(Eq,Ord,Show)
@@ -25,7 +26,7 @@ data Typ'' primtypes typ
   | TypRegister !typ -- ^ a register contains a mutable value, the register itself cannot be addressed,
   --   hence they may not be returned from functions or passed as arguments.
   | TypComplex !typ    -- ^ A complex version of a basic type
-  | TypVector !Int !typ  -- ^ A vector of a basic type
+  | TypVector !Word !typ  -- ^ A vector of a basic type
   | TypUnknown   -- ^ an unknown possibly undefined type, All of these must be eliminated by code generation
   deriving (Eq, Ord)
 
@@ -41,10 +42,16 @@ data TypeThunk'' sym typ
   | TypeApp !(Maybe typ) !sym -- ^ can be applied to (possibly) an argument, and what results
   | TypeSusp !sym -- ^ can be evaluated and calls what function
   deriving (Show, Eq)
-data TypeOfType'' sym typ = TypeOfType {
+
+type TypeThunk sym primtypes = TypeThunk'' sym (Typ primtypes)
+
+
+
+
+data TypeOfType sym typ = TypeOfType {
     typSlots :: ![typ],
     typReturn :: ![typ],
-    typThunk :: !(TyThunk sym typ),
+    typThunk :: !(TypeThunk sym typ),
     typSiblings :: !(Maybe [sym)]
   }
 
