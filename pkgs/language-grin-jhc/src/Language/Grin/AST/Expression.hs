@@ -1,120 +1,133 @@
 module Language.Grin.AST.Expression (
-  Var(..), v0, v1, v2, v3,
-  --
-  Val''(..), Val, n0, n1, n2, n3, p0, p1, p2, p3, isVar,
-  --
-  Lambda''(..),
+  FuncDef(..), newFuncDef, updateFuncDef,
   --
   Expression''(..), Expression(..)
   ) where
 
 import qualified Data.Text as T
+import qualified Data.Set as Set
 
 import Language.Grin.AST.Tag
+import Language.Grin.AST.Var
 import Language.Grin.AST.Type
+import Language.Grin.AST.Lambda
 import Language.Grin.AST.BasicOperation
-
--- ---------------------------------------------------------------------------
-
-newtype Var = Var Int deriving (Eq, Ord, Enum)
-
-v0, v1, v2, v3 :: Var
-v0 = Var 0
-v1 = Var 1
-v2 = Var 2
-v3 = Var 3
-
+import Language.Grin.Data.Perhaps
+import Language.Grin.Data.FuncProp
+import Language.Grin.Internal.Classes
 
 
 -- ---------------------------------------------------------------------------
 
-data Val'' sym typ primval
-  = ValNodeC !(Tag sym) ![Val'' sym typ primval]
-  | ValConst !(Val'' sym typ primval)
-  | ValLit !Number !(typ
-  | ValVar !Var !typ
-  | ValUnit
-  | ValPrim !primval ![Val'' sym typ primval] !typ
-  | ValIndex !(Val'' sym typ primval) !(Val'' sym typ primval)
-  | ValItem !sym !typ
-  | ValUnknown !typ
-  deriving (Eq, Ord)
-
-type Val sym primtypes primval = Val'' sym (Typ primtypes) primval
+data FuncDef sym primtypes littyp primval expr = FuncDef {
+    funcDefName :: !sym,
+    funcDefBody :: !(Lambda sym primtypes littyp expr),
+    funcDefCall :: !(Val sym primtypes littyp primval),
+    funcDefProps :: !FuncProps sym (Typ primtypes)
+  }
+  deriving (Show, Eq, Ord)
 
 
-n0, n1, n2, n3, p0, p1, n2, p3 :: Val'' sym primtypes primval
-n0 = ValVar v0 $ Typ TypNode
-n1 = ValVar v1 $ Typ TypNode
-n2 = ValVar v2 $ Typ TypNode
-n3 = ValVar v3 $ Typ TypNode
-p0 = ValVar v0 $ Typ TypINode
-p1 = ValVar v1 $ Typ TypINode
-p2 = ValVar v2 $ Typ TypINode
-p3 = ValVar v3 $ Typ TypINode
+
+newFuncDef :: Expr sym primtypes expr
+           => Bool -> sym -> Lambda sym primtypes littyp expr
+           -> FuncDef sym primtypes littyp primval expr
+newFuncDef local name lam = FuncDef {
+    funcDefName = name,
+    funcDefBody = lam,
+    funcDefCall = call,
+    funcDefProps = newFuncProps lam }
+  where
+    props = newFunctopnProps lam
+    call = ValItem name
+                   (TyCall (if local then LocalFunction else Function)
+                           (fst $ funcType prop)
+                           (snd $ funcType prop))
 
 
-isVar :: Val'' _ _ _
-isVar (ValVar _ _) = True
-isVar _ = False
-
+updateFuncDefProps :: Expr sym primtypes expr
+                   => Lambda sym primtypes littyp primval expr
+                   -> FuncDef sym primtypes littyp primval expr
+                   -> FuncDef sum primtypes littyp primval expr
+updateFuncDefProps lam fd@FuncDef{..} =
+  fd { funcDefProps = updateFuncProps funcDefProps }
 
 
 
 
 -- ---------------------------------------------------------------------------
 
-data Lambda'' val expr = Lambda { lamBind :: ![val], lamExp :: ! expr }
 
-
-data Expression'' sym opr primopr val typ expr
-  = ExprBind !expr !(Lambda'' val expr)
-  | ExprBaseOp { expBaseOp :: !opr, expArgs :: ![val] }
-  | ExprApp { expFunction :: !sym,  expArgs :: ![val], expType :: ![typ] }
-  | ExprPrim { expPrimitive :: primopr, expArgs :: ![val], expType :: ![typ] }
-  | ExpCase { expValue :: !val, expAlts :: ![Lambda'' val expr] }
-  | ExpReturn { expValues :: ![val] }
-  | ExpError { expError :: T.Text, expType :: ![typ] }
+data Expression'' sym primetypes primopr littyp primval expr
+  = ExprBind !expr !(Lambda (Val sum primtypes littyp primval) expr)
+  | ExprBaseOp {
+      expBaseOp :: !(BasicOperation primtypes),
+      expArgs :: ![Val sym primtypes littyp primval] }
+  | ExprApp {
+      expFunction :: !sym,
+      expArgs :: ![Val sym primtypes littyp primval],
+      expType :: ![Typ primtypes] }
+  | ExprPrim {
+      expPrimitive :: primopr,
+      expArgs :: ![Val sym primtypes littyp primval],
+      expType :: ![Typ primtypes] }
+  | ExpCase {
+      expValue :: !(Val sym primtypes littyp primval),
+      expAlts :: ![Lambda sym primtypes littyp expr] }
+  | ExpReturn {
+      expValues :: ![Val sym primtypes, littyp primval] }
+  | ExpError {
+      expError :: T.Text,
+      expType :: ![Typ primtypes] }
   | ExpCall {
-      expValue :: !val,
-      expArgs :: ![val],
-      expType :: ![typ],
+      expValue :: !(Val sym primtypes littyp primval),
+      expArgs :: ![Val sym primtypes littyp primval],
+      expType :: ![Typ primtypes],
       expJump :: !Bool,
-      expFUncProps :: !FuncProps,
+      expFuncProps :: !FuncProps sym primtypes,
       expInfo :: !Info.Info {- is this a pragma or analysis result? -} }
-  | ExpNewRegion { expLam :: Lambda'' val expr, expInfo :: Info.Info }
+  | ExpNewRegion { expLam :: Lambda val expr, expInfo :: Info.Info }
   | ExpAlloc {
-      expValue :: !val,
-      expCount :: !val,
-      expRegion :: !val,
+      expValue :: !(Val sym primtypes littyp primval),
+      expCount :: !(Val sym primtypes littyp primval),
+      expRegion :: !(Val sym primtypes littyp primval),
       expInfo :: Info.Info}
   | ExpLet {
-      expDefs :: ![FuncDef],
+      expDefs :: ![FuncDef sym primtypes littyp primval expr],
       expBody :: !expr,
       expFunCalls :: !(Set.Set sym, Set.Set sym),
       expIsNormal :: !Bool,
       expNonNormal :: Set.Set sym,
       expInfo :: Info.Info }
   | MkClosure {
-      expValue :: !val,
-      expArgs :: ![val],
-      expRegion :: !val,
-      expType :: ![typ],
+      expValue :: !(Val sym primtypes littyp primval),
+      expArgs :: ![Val sym primtypes littyp primval],
+      expRegion :: !(Val sym primtypes littyp primval),
+      expType :: ![Type primpypes],
       expInfo :: Info.Info }
   | MkCont {
-      expCont :: Lambda'' val expr,
-      expLam :: Lambda'' val expr,
+      expCont :: Lambda sym primtypes littyp expr,
+      expLam :: Lambda sym prumtypes littyp expr,
       expInfo :: Info.Info }
-  | GcRoots { expValue :: ![val], expBody :: !expr }
+  | GcRoots {
+      expValue :: ![Val sym primtypes littyp prinval],
+      expBody :: !expr }
   deriving (Show, Eq, Ord)
 
-newtype Expression sym primopr primtypes primval = Expression {
-    unwrap :: Expression'' sym
-                (BasicOperation primtypes)
-                primopr
-                (Val sym primtypes primval)
-                (Typ primtypes)
-                (Expression sym primopr primtypes primval)
+newtype Expression sym primtypes primopr littyp primval
+  = Expression {
+    unwrap :: Expression'' sym primtypes primopr littyp primval
+                           (Expression sym primtypes primopr littyp primval)
   }
+  deriving (Show, Eq, Ord)
 
+
+// TODO:
+instance Expr sym primtypes (Expression sym primtypes primopr littyp primval) where
+  exprFreeVars =
+  exprType =
+
+
+
+-- vim: ts=8 sw=2 expandtab :
 
