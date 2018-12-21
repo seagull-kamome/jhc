@@ -17,6 +17,7 @@ library:
   default-extensions:
     - GADTs
     - RankNTypes
+    - DataKinds
   dependencies:
     - base >= 4.7 && < 5
 
