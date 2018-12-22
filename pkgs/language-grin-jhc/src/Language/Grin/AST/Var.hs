@@ -21,5 +21,6 @@ v2 = Var 2
 v3 = Var 3
 
 
+-- vim: ts=8 sw=2 expandtab :
 
 

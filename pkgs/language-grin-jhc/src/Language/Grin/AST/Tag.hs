@@ -11,8 +11,8 @@ import Text.PrettyPrint.ANSI.Leojen hiding((<$>))
 
 data TagType = Tag'f | Tag'C | Tag'P | Tag'F | Tag'b | Tag'B | Tag'T | Tag'Y
 
-data Tag'' (tagtyp :: 'TagType) sym where
-  TagHole :: Tag'' anytype sym
+data Tag'' (tagtyp :: TagType) sym where
+  TagHole :: !Word -> Tag'' anytype sym
   TagDataCons {- C -} :: { tagName :: !sym } -> Tag'' Tag'C sym
   TagFunc {- f -} :: { tagName :: !sym } -> Tag'' Tag'f sym
   TagPApp {- P -} :: { tagUnfunction :: !(Tag'' Tag'f sym), tagNeededArgs :: !Word {- /=0 -} } -> Tag'' Tag'P sym
@@ -29,7 +29,7 @@ newtype Tag sym = Tag { tagUnwrap :: forall (tagtyp :: TagType). Tag tagtyp sym 
 
 instance Pretty sym => Pretty (Tag'' _ sym) where
   pretty TabHole         = "@hole"
-  pretty (TagDataCons x} = "C" <> pretty x
+  pretty (TagDataCons x) = "C" <> pretty x
   pretty (TagFunc x)     = "f" <> pretty y
   pretty (TagPApp x n)   = "P" <> int n <> "_" <> pretty (tagName x)
   pretty (TagSusp x _)   = "F" <> pretty (tagName x)
@@ -44,33 +44,33 @@ instance Pretty sym => Pretty (Tag'' _ sym) where
 -- Decide tag types.
 
 isSuspFunction :: Tag sym -> Bool
-isSUspFunction Tag(TagSusp {}) = True
-isSuspFunction Tag(TagSusp' {}) = True
+isSUspFunction (Tag TagSusp{}) = True
+isSuspFunction (Tag TagSusp'{}) = True
 isSuspFunction = False
 
 isFunction :: Tag sym -> Bool
-isFunction Tag(TagFunc{}) = True
-isFunction Tag(TagFunc'{}) = True
+isFunction (Tag TagFunc{}) = True
+isFunction (Tag TagFunc'{}) = True
 isFunction _ = False
 
 
 isPartialAp :: Tag sym -> Bool
-isPartialAp Tag(TagPApp{}) = True
+isPartialAp (Tag TagPApp{}) = True
 isPartialAp _ = False
 
 isTag :: Tag sym -> Bool
-isTag Tag(TagDataCons{}) = True
-isTag Tag(TagPApp{}) = True
-isTag Tag(TagSusp{}) = True
-isTag Tag(TagSusp'{}) = True
-isTag Tag(TagTypePApp{}) = True
+isTag (Tag TagDataCons{}) = True
+isTag (Tag TagPApp{}) = True
+isTag (Tag TagSusp{}) = True
+isTag (Tag TagSusp'{}) = True
+isTag (Tag TagTypePApp{}) = True
 isTag _ = False
 
 isWHNF :: Tag sym -> Bool
-isWHNF Tag(TapPApp{}) = True
-isWHNF Tag(TagTypeCons{}) = True
-isWHNF Tag(TagDataCons{}) = True
-isWHNF Tag(TagTypeApp{}) = True
+isWHNF (Tag TapPApp{}) = True
+isWHNF (Tag TagTypeCons{}) = True
+isWHNF (Tag TagDataCons{}) = True
+isWHNF (Tag TagTypeApp{}) = True
 isWHNF _ = False
 
 
@@ -80,8 +80,8 @@ isWHNF _ = False
 toPartial :: Tag sym -> Word -> Maybe (Tag sym)
 toPartial Tag(x@TagFunc{}) 0 = Just $ Tag $ TagSusp x True
 toPartial Tag(x@TagFunc{}) n = Just $ Tag $ TagPApp x n
-toPartial x@Tag(TagTypeCons{}) 0 = Just x
-toPartial Tag(x@TagTypeCons{}) n) = Just $ Tag $ TagTypePApp x n
+toPartial x@(Tag TagTypeCons{}) 0 = Just x
+toPartial Tag(x@TagTypeCons{}) n = Just $ Tag $ TagTypePApp x n
 tpPartial Tag(x@TagFunc'{}) 0 = Just $ Tag $ TagSusp' x True
 toPartial _ = Nothing
 
@@ -91,19 +91,19 @@ toFunction x = snd <$> unFunction x
 
 
 unFunction :: Tag sym -> Maybe (Int, Tag sym)
-unFunction Tag(TagSusp{..}) = Just (0, Tag tagUnfunction)
-unFunction Tag(TagSusp'{..}) = Just (0,  Tag tagUnfunction)
-unFunction x@Tag(TagFunc{}) = Just (0, x)
-unFunction x@Tag(TagFunc'{}) = Just (0, x)
-unFunction Tag(TagPApp{..}) = Just (tagNeededArgs, tagUnfunctiomn)
+unFunction (Tag TagSusp{..}) = Just (0, Tag tagUnfunction)
+unFunction (Tag TagSusp'{..}) = Just (0,  Tag tagUnfunction)
+unFunction x@(Tag TagFunc{}) = Just (0, x)
+unFunction x@(Tag TagFunc'{}) = Just (0, x)
+unFunction (Tag TagPApp{..}) = Just (tagNeededArgs, tagUnfunctiomn)
 unFUnction _ = Nothing
 
 
 flipFunction :: Tag sym -> Maybe (Tag sym)
-flipFunction Tag(TagSusp{..}) = Just tagUnfunction
-flipFunction Tag(TagSusp'{..}) = Just tagUnfunction
+flipFunction (Tag TagSusp{..}) = Just tagUnfunction
+flipFunction (Tag TagSusp'{..}) = Just tagUnfunction
 flipFUnction Tag(x@TagFunc{}) = Just $ TagSusp x True
-flipFunction Tag(x@TagFunc'()) = Just $ TagSusp' x True
+flipFunction Tag(x@TagFunc'{}) = Just $ TagSusp' x True
 flipFunction _ = Nothing
 
 
