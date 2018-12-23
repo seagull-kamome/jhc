@@ -1,5 +1,5 @@
 module Language.Grin.AST.BasicOperation (
-  BasicOperation''(..), BasicOperation
+  BasicOperation(..)
   ) where
 
 import Language.Grin.AST.Type
@@ -24,7 +24,7 @@ data BasicOperation primtypes
   | NewRegister   -- create a new register
   | ReadRegister  -- read a register
   | WriteRegister -- write to a register
-  deriving(Eq,Ord,Show)
+  deriving (Show, Eq, Ord)
 
 
 

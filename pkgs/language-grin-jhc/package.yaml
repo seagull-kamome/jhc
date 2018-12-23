@@ -29,6 +29,7 @@ library:
     - FlexibleContexts
     - LambdaCase
     - ExistentialQuantification
+    - GeneralizedNewtypeDeriving
   dependencies:
     - base >= 4.7 && < 5
     - ansi-wl-pprint
