@@ -1,52 +1,109 @@
 module Language.Grin.AST.Tag (
   TagType(..), Tag''(..), Tag(..),
   isSuspFunction, isFunction, isPartialAp, isTag, isWHNF,
-  toPartial, toFunction, unFUnction, flipFunction
+  toPartial, toFunction, unFunction, flipFunction
   ) where
 
-import Text.PrettyPrint.ANSI.Leojen hiding((<$>))
+import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
 
 -- ---------------------------------------------------------------------------
+-- Basic Tag
 
-data TagType = Tag'f | Tag'C | Tag'P | Tag'F | Tag'b | Tag'B | Tag'T | Tag'Y
+
+data TagType = Tag'Hole | Tag'f | Tag'C | Tag'P | Tag'F | Tag'b | Tag'B | Tag'T | Tag'Y
 
 data Tag'' (tagtyp :: TagType) sym where
-  TagHole :: !Word -> Tag'' anytype sym
-  TagDataCons {- C -} :: { tagName :: !sym } -> Tag'' Tag'C sym
-  TagFunc {- f -} :: { tagName :: !sym } -> Tag'' Tag'f sym
-  TagPApp {- P -} :: { tagUnfunction :: !(Tag'' Tag'f sym), tagNeededArgs :: !Word {- /=0 -} } -> Tag'' Tag'P sym
-  TagSusp {- F -} :: { tagUnfunction :: !(Tag'' Tag'f sym), tagUpdateRequired :: !Bool} -> Tag'' Tag'F sym
-  TagFunc' {- b -} :: { tagName :: !sym } -> Tag'' Tag'b sym
-  TagSusp' {- B -} :: { tagUnfunction :: !(Tag'' Tag'b sym), tagUpdateRequired :: !Bool } -> Tag'' Tag'B sym
-  TagTypeCons {- T -} :: { tagName :: !sym } -> Tag'' Tag'T sym
-  TagTypePApp {- Y -} :: { tagUnfunction :: !(Tag'' Tag'T sym), tagNeededArgs :: !Word {- /= 0 -} } -> Tag'' Tag'Y sym
-  deriving (Show, Eq, Ord)
+  TagHole :: !Word -> Tag'' 'Tag'Hole sym
+  TagDataCons {- C -} :: !sym -> Tag'' 'Tag'C sym
+  TagFunc {- f -} :: !sym -> Tag'' 'Tag'f sym
+  TagPApp {- P -} :: !(Tag'' 'Tag'f sym) -> !Word {- /=0 -} -> Tag'' 'Tag'P sym
+  TagSusp {- F -} :: !(Tag'' 'Tag'f sym) -> !Bool -> Tag'' 'Tag'F sym
+  TagFunc' {- b -} :: !sym -> Tag'' 'Tag'b sym
+  TagSusp' {- B -} :: !(Tag'' 'Tag'b sym) -> !Bool -> Tag'' 'Tag'B sym
+  TagTypeCons {- T -} :: !sym -> Tag'' 'Tag'T sym
+  TagTypePApp {- Y -} :: !(Tag'' 'Tag'T sym) -> !Word {- /= 0 -} -> Tag'' 'Tag'Y sym
 
-newtype Tag sym = Tag { tagUnwrap :: forall (tagtyp :: TagType). Tag tagtyp sym }
-  deriving (Show, Eq, Ord)
+deriving instance Show sym => Show (Tag'' tagtyp sym)
+deriving instance Eq sym => Eq (Tag'' tagtyp sym)
+instance Ord sym => Ord (Tag'' tagtyp sym) where
+  compare = compareTag
 
-
-instance Pretty sym => Pretty (Tag'' _ sym) where
-  pretty TabHole         = "@hole"
+instance Pretty sym => Pretty (Tag'' tagtyp sym) where
+  pretty (TagHole n)     = "@hole_" <> text (show n)
   pretty (TagDataCons x) = "C" <> pretty x
-  pretty (TagFunc x)     = "f" <> pretty y
-  pretty (TagPApp x n)   = "P" <> int n <> "_" <> pretty (tagName x)
-  pretty (TagSusp x _)   = "F" <> pretty (tagName x)
+  pretty (TagFunc x)     = "f" <> pretty x
+  pretty (TagPApp (TagFunc x) n)   = "P" <> text (show n) <> "_" <> pretty x
+  pretty (TagSusp (TagFunc x) _)   = "F" <> pretty x
   pretty (TagFunc' x)    = "b" <> pretty x
-  pretty (TagSusp' x _)  = "B" <> pretty (tagName x)
+  pretty (TagSusp' (TagFunc' x) _)  = "B" <> pretty x
   pretty (TagTypeCons x) = "T" <> pretty x
-  pretty (TagTypePApp x _) = "V" <> pretty (tagName x)
+  pretty (TagTypePApp (TagTypeCons x) _) = "V" <> pretty x
 
+
+
+
+{- PRIVATE -}
+compareTag :: Ord sym => Tag'' tt1 sym -> Tag'' tt2 sym -> Ordering
+compareTag lhs rhs = case compare (conid lhs) (conid rhs) of
+  EQ -> case (lhs, rhs) of
+    (TagHole n, TagHole m) -> compare n m
+    (TagDataCons s1, TagDataCons s2) -> compare s1 s2
+    (TagFunc s1, TagFunc s2) -> compare s1 s2
+    (TagPApp t1 n, TagPApp t2 m) -> case compareTag t1 t2 of
+      EQ -> compare n m
+      x -> x
+    (TagSusp t1 b1, TagSusp t2 b2) -> case compareTag t1 t2 of
+      EQ -> compare b1 b2
+      x -> x
+    (TagFunc' s1, TagFunc' s2) -> compare s1 s2
+    (TagSusp' t1 b1, TagSusp' t2 b2) -> case compareTag t1 t2 of
+      EQ -> compare b1 b2
+      x -> x
+    (TagTypeCons s1, TagTypeCons s2) -> compare s1 s2
+    (TagTypePApp t1 n, TagTypePApp t2 m) -> case compareTag t1 t2 of
+      EQ -> compare n m
+      x -> x
+    _ -> undefined -- Believe me!!
+  x -> x
+  where
+    conid :: Tag'' (tagtyp :: TagType) sym -> Int
+    conid (TagHole _) = 0
+    conid (TagDataCons _) = 1
+    conid (TagFunc _) = 2
+    conid (TagPApp _ _) = 3
+    conid (TagSusp _ _) = 4
+    conid (TagFunc' _) = 5
+    conid (TagSusp' _ _) = 6
+    conid (TagTypeCons _) = 7
+    conid (TagTypePApp _ _) = 8
+
+
+
+-- ---------------------------------------------------------------------------
+-- Quantified Tag
+
+data Tag sym = forall (tagtyp::TagType). Tag { tagUnwrap :: Tag'' tagtyp sym }
+deriving instance Show sym => Show (Tag sym)
+
+instance Ord sym => Eq (Tag sym) where
+  Tag x == Tag y = compareTag x y == EQ
+
+instance Ord sym => Ord (Tag sym) where
+  compare (Tag x) (Tag y) = compareTag x y
+
+instance Pretty sym => Pretty (Tag sym) where
+  pretty (Tag x) = pretty x
+  {-# INLINE pretty #-}
 
 
 -- ---------------------------------------------------------------------------
 -- Decide tag types.
 
 isSuspFunction :: Tag sym -> Bool
-isSUspFunction (Tag TagSusp{}) = True
+isSuspFunction (Tag TagSusp{}) = True
 isSuspFunction (Tag TagSusp'{}) = True
-isSuspFunction = False
+isSuspFunction _ = False
 
 isFunction :: Tag sym -> Bool
 isFunction (Tag TagFunc{}) = True
@@ -67,43 +124,44 @@ isTag (Tag TagTypePApp{}) = True
 isTag _ = False
 
 isWHNF :: Tag sym -> Bool
-isWHNF (Tag TapPApp{}) = True
+isWHNF (Tag TagPApp{}) = True
 isWHNF (Tag TagTypeCons{}) = True
 isWHNF (Tag TagDataCons{}) = True
-isWHNF (Tag TagTypeApp{}) = True
+isWHNF (Tag TagTypePApp{}) = True
 isWHNF _ = False
 
 
 -- ---------------------------------------------------------------------------
 -- Convert
 
-toPartial :: Tag sym -> Word -> Maybe (Tag sym)
-toPartial Tag(x@TagFunc{}) 0 = Just $ Tag $ TagSusp x True
-toPartial Tag(x@TagFunc{}) n = Just $ Tag $ TagPApp x n
+
+toPartial :: forall sym. Tag sym -> Word -> Maybe (Tag sym)
+toPartial (Tag (x@TagFunc{})) 0 = Just $ Tag $ TagSusp x True
+toPartial (Tag (x@TagFunc{})) n = Just $ Tag $ TagPApp x n
 toPartial x@(Tag TagTypeCons{}) 0 = Just x
-toPartial Tag(x@TagTypeCons{}) n = Just $ Tag $ TagTypePApp x n
-tpPartial Tag(x@TagFunc'{}) 0 = Just $ Tag $ TagSusp' x True
-toPartial _ = Nothing
+toPartial (Tag (x@TagTypeCons{})) n = Just $ Tag $ TagTypePApp x n
+toPartial (Tag (x@TagFunc'{})) 0 = Just $ Tag $ TagSusp' x True
+toPartial _ _ = Nothing
 
 
 toFunction :: Tag sym -> Maybe (Tag sym)
 toFunction x = snd <$> unFunction x
 
 
-unFunction :: Tag sym -> Maybe (Int, Tag sym)
-unFunction (Tag TagSusp{..}) = Just (0, Tag tagUnfunction)
-unFunction (Tag TagSusp'{..}) = Just (0,  Tag tagUnfunction)
+unFunction :: Tag sym -> Maybe (Word, Tag sym)
+unFunction (Tag (TagSusp x _)) = Just (0, Tag x)
+unFunction (Tag (TagSusp' x _)) = Just (0,  Tag x)
 unFunction x@(Tag TagFunc{}) = Just (0, x)
 unFunction x@(Tag TagFunc'{}) = Just (0, x)
-unFunction (Tag TagPApp{..}) = Just (tagNeededArgs, tagUnfunctiomn)
-unFUnction _ = Nothing
+unFunction (Tag (TagPApp x y)) = Just (y, Tag x)
+unFunction _ = Nothing
 
 
 flipFunction :: Tag sym -> Maybe (Tag sym)
-flipFunction (Tag TagSusp{..}) = Just tagUnfunction
-flipFunction (Tag TagSusp'{..}) = Just tagUnfunction
-flipFUnction Tag(x@TagFunc{}) = Just $ TagSusp x True
-flipFunction Tag(x@TagFunc'{}) = Just $ TagSusp' x True
+flipFunction (Tag (TagSusp x _)) = Just $ Tag x
+flipFunction (Tag (TagSusp' x _)) = Just $ Tag x
+flipFunction (Tag x@TagFunc{}) = Just $ Tag $ TagSusp x True
+flipFunction (Tag x@TagFunc'{}) = Just $ Tag $ TagSusp' x True
 flipFunction _ = Nothing
 
 

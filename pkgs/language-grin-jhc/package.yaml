@@ -15,10 +15,22 @@ library:
   ghc-options:
     - -Wall
   default-extensions:
+    - CPP
     - GADTs
+    - StandaloneDeriving
     - RankNTypes
     - DataKinds
+    - KindSignatures
+    - RecordWildCards
+    - NamedFieldPuns
+    - OverloadedStrings
+    - FlexibleInstances
+    - FunctionalDependencies
+    - FlexibleContexts
+    - LambdaCase
+    - ExistentialQuantification
   dependencies:
     - base >= 4.7 && < 5
+    - ansi-wl-pprint
 
 

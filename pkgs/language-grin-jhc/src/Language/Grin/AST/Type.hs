@@ -1,8 +1,9 @@
 module Language.Grin.AST.Type (
-  Callable, Typ(..), TypeThunk(..), TypeOfType(..), TypeEnv(..)
+  Callable, Typ(..), TypeThunk(..),
+  --
+  TypeOfType(..), emptyTypeOfType
   ) where
 
-import qualified Data.Default -- data-default
 import Text.PrettyPrint.ANSI.Leijen
 
 
@@ -36,7 +37,7 @@ data Typ primtypes
 instance Pretty primtypes => Pretty (Typ primtypes) where
   pretty = \case
     TypComplex t -> "Complex" <+> pretty t
-    TypVector v t -> pretty t <> char '*' <> pretty v
+    TypVector v t -> pretty t <> char '*' <> text (show v)
     TypAttr t1 t2 -> pretty t1 <> char '#' <> pretty t2
     TypAnd t1 t2 -> pretty t1 <> "&&" <> pretty t2
     TypOr t1 t2 -> pretty t1 <> "||" <> pretty t2
@@ -45,9 +46,9 @@ instance Pretty primtypes => Pretty (Typ primtypes) where
     TypPtr t -> char '&' <> pretty t
     TypUnit -> "()"
     TypRegion -> "<"
-    TypGCContext -> "GC"
+    TypGcContext -> "GC"
     TypRegister t -> char 'r' <> pretty t
-    TypCall c args rt -> pretty c <> tupled (map pretty args) <+> "->" <+> pretty rt
+    TypCall c args rt -> text (show c) <> tupled (map pretty args) <+> "->" <+> pretty rt
     TypUnknown -> char '?'
     _ -> "BADTYPE"
 
@@ -65,7 +66,6 @@ data TypeThunk sym primtypes
 
 
 
-
 data TypeOfType sym primtypes = TypeOfType {
     typSlots :: ![Typ primtypes],
     typReturn :: ![Typ primtypes],
@@ -73,15 +73,11 @@ data TypeOfType sym primtypes = TypeOfType {
     typSiblings :: !(Maybe [sym])
   }
 
-instance Data.Default.Default TypeOfType where
-  dft = TypeOfType [] [] TypeNotThunk Nothing
-
-
 
 -- ---------------------------------------------------------------------------
 -- Construction
 
-emptyTypeOfType :: TypeOfType'' sym typ
+emptyTypeOfType :: TypeOfType sym primtypes
 emptyTypeOfType = TypeOfType []  [] TypeNotThunk Nothing
 
 
