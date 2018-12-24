@@ -2,7 +2,7 @@ module Language.Grin.Data.TypeEnv (
   TypeEnv(..), findTypeOfType, findArgType, findArg
   ) where
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 
 import Language.Grin.AST.Type
 import Language.Grin.AST.Tag

@@ -32,7 +32,7 @@ data FuncProps sym primtypes = FuncProps {
 
 
 newFuncProps :: Expr sym primtypes expr
-                => Lambda sym primtypes littyp expr
+                => Lambda sym primtypes expr
                 -> FuncProps sym primtypes
 newFuncProps lam@Lambda{..} = FuncProps {
     funcInfo = mempty,
@@ -49,7 +49,7 @@ newFuncProps lam@Lambda{..} = FuncProps {
 
 
 updateFuncProps :: Expr sym primtypes expr
-                => Lambda sym primtypes littyp expr
+                => Lambda sym primtypes expr
                 -> FuncProps sym primtypes -> FuncProps sym primtypes
 updateFuncProps lam@Lambda{..} fp@FuncProps{..} =
   fp { funcFeeVars = fv,

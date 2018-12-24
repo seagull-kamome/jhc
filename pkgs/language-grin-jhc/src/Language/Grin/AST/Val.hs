@@ -15,26 +15,27 @@ import Language.Grin.Internal.Classes
 
 -- ---------------------------------------------------------------------------
 
-data Val sym primtypes littyp primval
+data Val sym primtypes primval
   = ValNodeC !(Tag sym) ![Val sym primtypes primval]
-  | ValConst !(Val sym primtypes littyp primval)
-  | ValLit !littype !(Typ primtypes)
+  | ValConst !(Val sym primtypes Rational primval)
+  | ValLit !Rational !(Typ primtypes)
   | ValVar !Var !(Typ primtypes)
   | ValUnit
-  | ValPrim !primval ![Val sym primtypes littyp primval] !typ
-  | ValIndex !(Val sym primtypes littyp primval) !(Val sym primtypes littyp primval)
+  | ValPrim !primval ![Val sym primtypes primval] !(Typ primtypes)
+  | ValIndex !(Val sym primtypes primval) !(Val sym primtypes primval)
   | ValItem !sym !(Typ primtypes)
   | ValUnknown !(Typ primtypes)
   deriving (Eq, Ord)
 
 
-instance (Pretty (Tag sym), Pretty littyp, PrimType primtypes)
-    => Pretty (Val sym primtypes littyp primval) where
+
+instance (Pretty (Tag sym), PrimType primtypes, Pretty primval)
+    => Pretty (Val sym primtypes primval) where
   pretty = \case
     ValNodeC t [] -> pretty t
     ValNodeC t vs -> pretty t <+> hsep (map pretty vs)
     ValConst v -> char '&' <> pretty v
-    ValLit l _ -> pretty l
+    ValLit l _ -> text $ show l
     ValVar v@(Var n) t -> case t of
       TypPtr t' -> char 'p' <> pretty (ValVar v t')
       TypNode -> "ng" <> int n
@@ -44,7 +45,11 @@ instance (Pretty (Tag sym), Pretty littyp, PrimType primtypes)
       TypGCContext -> "gc" <> int n
       TypRegister t' -> "r" <> pretty (VarVal v t')
       _ -> pretty v
-
+    ValUnit -> text "()"
+    ValPrim x args ty -> pretty x <> tupled (map pretty args) <> text "::" <> pretty ty
+    ValIndex p ofs -> pretty p <> brackets (pretty ofs)
+    ValItem x ty -> pretty x <> text "::" <> pretty ty
+    ValUnknown ty -> text "?::" <> pretty ty
 
 
 -- ---------------------------------------------------------------------------
@@ -70,7 +75,7 @@ isVar _ = False
 
 
 -- | Resolve type of the value
-valType :: Monad m => Val sym primtypes littyp primval -> m (Typ primtypes)
+valType :: Monad m => Val sym primtypes primval -> m (Typ primtypes)
 valType (ValNodeC _ _) = pure TypNode
 valType (ValConst x) = case getType x of
   TypNode -> pure TypINode

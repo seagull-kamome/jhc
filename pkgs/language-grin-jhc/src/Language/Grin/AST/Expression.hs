@@ -4,10 +4,13 @@ module Language.Grin.AST.Expression (
   Expression''(..), Expression(..)
   ) where
 
+import Data.Bool (bool)
 import qualified Data.Text as T
 import qualified Data.Set as Set
 
 import qualified Data.EnumSet.EnumSet as ESet -- containers-missing
+
+import Text.PrettyPrint.ANSI.Leijen ((<$>))
 
 import Language.Grin.AST.Tag
 import Language.Grin.AST.Var
@@ -17,14 +20,15 @@ import Language.Grin.AST.BasicOperation
 import Language.Grin.Data.Perhaps
 import Language.Grin.Data.FuncProp
 import Language.Grin.Internal.Classes
+import qualified Language.Grin.Internal.Highlighter as H
 
 
 -- ---------------------------------------------------------------------------
 
-data FuncDef sym primtypes littyp primval expr = FuncDef {
+data FuncDef sym primtypes primval expr = FuncDef {
     funcDefName :: !sym,
-    funcDefBody :: !(Lambda sym primtypes littyp expr),
-    funcDefCall :: !(Val sym primtypes littyp primval),
+    funcDefBody :: !(Lambda sym primtypes expr),
+    funcDefCall :: !(Val sym primtypes primval),
     funcDefProps :: !FuncProps sym (Typ primtypes)
   }
   deriving (Show, Eq, Ord)
@@ -32,8 +36,8 @@ data FuncDef sym primtypes littyp primval expr = FuncDef {
 
 
 newFuncDef :: Expr sym primtypes expr
-           => Bool -> sym -> Lambda sym primtypes littyp expr
-           -> FuncDef sym primtypes littyp primval expr
+           => Bool -> sym -> Lambda sym primtypes expr
+           -> FuncDef sym primtypes primval expr
 newFuncDef local name lam = FuncDef {
     funcDefName = name,
     funcDefBody = lam,
@@ -47,9 +51,9 @@ newFuncDef local name lam = FuncDef {
 
 
 updateFuncDefProps :: Expr sym primtypes expr
-                   => Lambda sym primtypes littyp primval expr
-                   -> FuncDef sym primtypes littyp primval expr
-                   -> FuncDef sum primtypes littyp primval expr
+                   => Lambda sym primtypes primval expr
+                   -> FuncDef sym primtypes primval expr
+                   -> FuncDef sum primtypes primval expr
 updateFuncDefProps lam fd@FuncDef{..} =
   fd { funcDefProps = updateFuncProps funcDefProps }
 
@@ -59,75 +63,192 @@ updateFuncDefProps lam fd@FuncDef{..} =
 -- ---------------------------------------------------------------------------
 
 
-data Expression'' sym primetypes primopr littyp primval expr
-  = ExprBind !expr !(Lambda (Val sym primtypes littyp primval) expr)
+data Expression'' sym primetypes primopr primval expr
+  = ExprBind !expr !(Lambda (Val sym primtypes primval) expr)
   | ExprBaseOp {
       expBaseOp :: !(BasicOperation primtypes),
-      expArgs :: ![Val sym primtypes littyp primval] }
+      expArgs :: ![Val sym primtypes primval] }
   | ExprApp {
       expFunction :: !sym,
-      expArgs :: ![Val sym primtypes littyp primval],
+      expArgs :: ![Val sym primtypes primval],
       expType :: ![Typ primtypes] }
   | ExprPrim {
       expPrimitive :: primopr,
-      expArgs :: ![Val sym primtypes littyp primval],
+      expArgs :: ![Val sym primtypes primval],
       expType :: ![Typ primtypes] }
   | ExprCase {
-      expValue :: !(Val sym primtypes littyp primval),
-      expAlts :: ![Lambda sym primtypes littyp expr] }
+      expValue :: !(Val sym primtypes primval),
+      expAlts :: ![Lambda sym primtypes expr] }
   | ExprReturn {
-      expValues :: ![Val sym primtypes, littyp primval] }
+      expValues :: ![Val sym primtypes, primval] }
   | ExprError {
       expError :: T.Text,
       expType :: ![Typ primtypes] }
   | ExprCall {
-      expValue :: !(Val sym primtypes littyp primval),
-      expArgs :: ![Val sym primtypes littyp primval],
+      expValue :: !(Val sym primtypes primval),
+      expArgs :: ![Val sym primtypes primval],
       expType :: ![Typ primtypes],
       expJump :: !Bool,
       expFuncProps :: !FuncProps sym primtypes,
       expInfo :: !Info.Info {- is this a pragma or analysis result? -} }
   | ExprNewRegion { expLam :: !(Lambda val expr), expInfo :: !Info.Info }
   | ExprAlloc {
-      expValue :: !(Val sym primtypes littyp primval),
-      expCount :: !(Val sym primtypes littyp primval),
-      expRegion :: !(Val sym primtypes littyp primval),
+      expValue :: !(Val sym primtypes primval),
+      expCount :: !(Val sym primtypes primval),
+      expRegion :: !(Val sym primtypes primval),
       expInfo :: Info.Info}
   | ExprLet {
-      expDefs :: ![FuncDef sym primtypes littyp primval expr],
+      expDefs :: ![FuncDef sym primtypes primval expr],
       expBody :: !expr,
       expFunCalls :: !(Set.Set sym, Set.Set sym),
       expIsNormal :: !Bool,
       expNonNormal :: Set.Set sym,
       expInfo :: Info.Info }
   | ExprMkClosure {
-      expValue :: !(Val sym primtypes littyp primval),
-      expArgs :: ![Val sym primtypes littyp primval],
-      expRegion :: !(Val sym primtypes littyp primval),
+      expValue :: !(Val sym primtypes primval),
+      expArgs :: ![Val sym primtypes primval],
+      expRegion :: !(Val sym primtypes primval),
       expType :: ![Type primpypes],
       expInfo :: Info.Info }
   | ExprMkCont {
-      expCont :: Lambda sym primtypes littyp expr,
-      expLam :: Lambda sym prumtypes littyp expr,
+      expCont :: Lambda sym primtypes expr,
+      expLam :: Lambda sym prumtypes expr,
       expInfo :: Info.Info }
   | ExprGcRoots {
-      expValue :: ![Val sym primtypes littyp prinval],
+      expValue :: ![Val sym primtypes prinval],
       expBody :: !expr }
   deriving (Show, Eq, Ord)
 
-newtype Expression sym primtypes primopr littyp primval
+
+
+-- ---------------------------------------------------------------------------
+
+
+instance (Pretty expr,
+          Pretty sym,
+          Pretty (Val sym primtypes primval),
+          PrimOpr primopr )
+    => Pretty (Expression sym primtypes primptr primval expr) where
+  pretty = go empty where
+    -- highlighter
+    kwd = H.keyword . text
+    prettyVals k vs = case vs of
+                  [v] -> pretty v
+                  _ -> tupled $ map pretty vs
+    applyKwd k vs = kwd k <+> hsep (map pretty vs)
+    applyKwd' k vs = kwd k <+> tupled (map pretty vs)
+    prim = H.primitive . text
+    --
+    larr = operator "<-"
+    --
+    go vl = \case
+      ExprBind e1@ExprBind{} (Lambda vs e2)
+        -> align $ tupled (map pretty vs) <+> larr <+> go empty e1
+                   <> line <> go vl e2
+      ExprBind e1 (Lambda vs w2)
+        -> align $ go (if null vs
+                          then empty
+                          else tuples (map pretty vs) <+> larr) e1
+                   <> line <> go vl e2
+      ExprBaseOp Demote vs -> vl <+> applyKwd "demote" vs
+      ExprBaseOp (StoreNode b) vs
+        -> vl <+> H.keyword (text $ bool "dstore" "istore" b)
+              <+> case vs of
+                    [x] -> pretty x
+                    [x, y] -> pretty x <> char '@' <> pretty y
+                    _ -> error "pretty(Expr): Bad StoreNode opr."
+      -- ExprBaseOp Consume -> error
+      ExprBaseOp GCTouch vs       -> vl <+> applyKwd' "gcTOuch" vs
+      ExprBaseOp GCPush vs        -> vl <+> applyKwd' "gcPush" vs
+      ExprBaseOp NewRegister vs   -> vl <+> applyKwd' "register" vs
+      ExprBaseOp ReadRegister [r] -> vl <+> kwd "*" <> pretty r
+      ExprBaseOp WriteRegister [r, x] -> vl <+> pretty r <+> kwd ":=" <+> pretty x
+      ExprBaseOp op vs            -> vl <+> applyKwd x vs
+        where x = case op of
+                    Promote -> "promote"
+                    Eval -> "eval"
+                    Apply -> "apply"
+                    Redirect -> "redirect"
+                    Overwrite -> "overwrite"
+                    Coerce _ -> "coerce"
+                    PokeVal -> "pokeVal"
+                    PeekVal -> "peekval"
+      ExprApp s vs _ -> vl <+> H.funcname (pretty s) <+> hsep (map pretty vs)
+      ExprPrim{..} -> prettyPrimOpr exprPrimitive expArgs expType
+      ExprCase v vs -> vl <+> kwd "case" <+> pretty v <+> kwd "ok" <> hline
+                       <> indent 2 (vsep (map f vs))
+        where
+          f (Lambda [v] e) =
+            pretty v <+> operator "->" <+> case e of
+                    ExprBind{}   -> kwd "do" <+> align (pretty e)
+                    ExprCase{}   -> kwd "do" <+> align (pretty e)
+                    ExprLet{}    -> kwd "do" <+> align (pretty e)
+                    ExprMkCOnt{} -> kwd "do" <+> align (pretty e)
+                    _ -> pretty e
+      ExprReturn vs -> vl <+> kwd "return" <+> case vs of
+                    [v] -> pretty v
+                    xs -> tupled (map pretty xs)
+      ExprError s _ -> if null s
+                          then prim "exitFailure"
+                          else kwd "error" <+> text (T.unpack s)
+      ExprCall v args _ jmps _ _ ->
+        vl <> (case v of
+                 ValItem s (TypCall c _ _)
+                   | c == Function || c == LocalFUnction
+                      -> text (if jmps then "jump to" else "call") <+> H.funcname (pretty s)
+                 ValVar v' (TypCall c _ _) -> f jmps c <+> pretty v'
+                   where f False Continuation = text "cut to"
+                         f False Function = text "call"
+                         f True Function = textt "jump to"
+                         f False Closure = text "enter"
+                         f True Closure = text "jump into"
+                         f x y = pretty $ show (x, y)
+                 ValPrim ap [] (TypCall Primitive' _ _) -> H.primitive (pretty ap)
+                 _ -> error "pretty(Expr): Bad call")
+           <+> hsep (map pretty args)
+      ExprNewRegion (Lambda r bdy) _ ->
+        vl <> keyword "region" <+> text "\\" <> prettyVals r <+> text "->"
+           <+> kwd "do" <+> align (pretty e)
+      ExprAlloc{..} -> vl <+> H.keyword (text "alloc")
+                          <+> pretty expValue
+                          <+> case expCount of
+                                ValLit n _ | n == 1 -> empty
+                                _ -> breckets (pretty expCount)
+                          <+> text "at" <+> pretty expRegion
+      ExprLet{..} -> vl <+> H.keyword (if exprIsNormal then "let" else "let*")
+                     <> align (vsep $ map f exprDefs)
+                     <> line <> text "in" <> align (pretty exprBody)
+        where
+          f FuncDef{..} = H.funcname (pretty funcDefName)
+                            <+> hsep (map pretty $ lamBind fundcDefBody)
+                            <+> H.operator (text "=")
+                            <+> H.keyword (text "do")
+                            <+> align (pretty $ lamExpr funcDefBody)
+      -- ExprMkClosure -> error
+      -- ExprMkCont -> error
+      ExprGCRoots vs bdy -> vl <+> kwd "withRoots" <> tupled (map pretty vs)
+                            <+> hline <> indent 2 (pretty b)
+      _ -> error "pretty(Expr): Bad expression"
+
+
+
+-- ---------------------------------------------------------------------------
+
+newtype Expression sym primtypes primopr primval
   = Expression {
-    unwrap :: Expression'' sym primtypes primopr littyp primval
-                           (Expression sym primtypes primopr littyp primval)
+    unwrap :: Expression'' sym primtypes primopr primval
+                           (Expression sym primtypes primopr primval)
   }
   deriving (Show, Eq, Ord)
 
+instance Pretty (Expression sym primtypes primopr primval) where
+  pretty (Expression x) = pretty x
 
 
 --
 --
 --
-instance Expr sym primtypes (Expression sym primtypes primopr littyp primval) where
+instance Expr sym primtypes (Expression sym primtypes primopr primval) where
   exprType (Expression expr) = case expr of
       ExprBind _ (Lanmbda _ bdy) -> exprType bdy
       ExprBaseOp{..} -> case expBaseOp of

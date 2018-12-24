@@ -4,7 +4,6 @@ module Language.Grin.AST.BasicOperation (
 
 import Language.Grin.AST.Type
 
-
 -- ---------------------------------------------------------------------------
 
 data BasicOperation primtypes
@@ -27,7 +26,7 @@ data BasicOperation primtypes
   deriving (Show, Eq, Ord)
 
 
-
+-- ---------------------------------------------------------------------------
 
 
 

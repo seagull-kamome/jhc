@@ -1,4 +1,4 @@
-module Language.Grim.AST.Program (
+module Language.Grin.AST.Program (
   OptimizingPhase, Program(..), emptyProgram
   ) where
 
@@ -21,15 +21,15 @@ data OpitimizingPhase
 
 
 
-data Program sym primtypes primopr littyp primval
+data Program sym primtypes primopr primval
   = Program {
     progEntryPoints :: Map.Map sym FFIExport,
     progOptimizingPhase :: OptimizingPhase,
     progTypeEnv :: TypeEnv sym primtypes,
-    progFunctions :: [FuncDef sym primtypes littyp primval (Expression sym primtypes primopr littyps primval)],
+    progFunctions :: [FuncDef sym primtypes primval (Expression sym primtypes primopr primval)],
     progSuspFunctions :: Set.Set sym,
     progPartFUnctions :: Set.Set sym,
-    progCafs :: [(Var, Val sym primtypes littyp primval)]
+    progCafs :: [(Var, Val sym primtypes primval)]
     }
 
 
@@ -37,7 +37,7 @@ data Program sym primtypes primopr littyp primval
 -- ---------------------------------------------------------------------------
 -- Construction
 
-emptyProgram :: Program sym primtypes primopr littyp primval
+emptyProgram :: Program sym primtypes primopr primval
 emptyProgram = Program mempty OPhaseInit mempty mempty mempty mempty mempty
 
 

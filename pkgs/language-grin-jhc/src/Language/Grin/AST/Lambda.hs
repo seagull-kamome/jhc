@@ -11,9 +11,9 @@ import Language.Grin.Internal.Classes
 
 -- ---------------------------------------------------------------------------
 
-data Lambda sym primtypes littyp primval expr
+data Lambda sym primtypes primval expr
   = Lambda {
-    lamBind :: ![Val sym primtypes littyp primval],
+    lamBind :: ![Val sym primtypes primval],
     lamExpr :: ! expr }
 
 
