@@ -1,6 +1,7 @@
 module Language.Grin.AST.Val (
   Val(..), n0, n1, n2, n3, p0, p1, p2, p3, isVar,
-  valType, valFreeVars, valFreeTagVars
+  valType, valFreeVars, valFreeTagVars,
+  properHole, isHole
   ) where
 
 import qualified Data.Text as T
@@ -29,22 +30,24 @@ data Val sym primtypes primval
 
 
 
-instance (Pretty (Tag sym), PrimType primtypes, Pretty primval)
+instance (Pretty (Tag sym), Pretty sym, Pretty (Typ primtypes),
+          PrimType primtypes, Pretty primval)
     => Pretty (Val sym primtypes primval) where
   pretty = \case
     ValNodeC t [] -> pretty t
     ValNodeC t vs -> pretty t <+> hsep (map pretty vs)
     ValConst v -> char '&' <> pretty v
     ValLit l _ -> text $ show l
-    ValVar v@(Var n) t -> case t of
-      TypPtr t' -> char 'p' <> pretty (ValVar v t')
-      TypNode -> "ng" <> int n
-      TypINode -> "ni" <> int n
-      TypPrim prim -> text (T.unpack $ varPrefix prim) <> int i
-      TypRegion -> "m" <> int n
-      TypGcContext -> "gc" <> int n
-      TypRegister t' -> "r" <> pretty (VarVal v t')
-      _ -> pretty v
+    ValVar v@(Var n) t -> f t
+      where f = \case
+              TypPtr t' -> char 'p' <> f t'
+              TypNode -> "ng" <> int n
+              TypINode -> "ni" <> int n
+              TypPrim prim -> text (T.unpack $ varPrefix prim) <> int n
+              TypRegion -> "m" <> int n
+              TypGcContext -> "gc" <> int n
+              TypRegister t' -> "r" <> f t'
+              _ -> pretty v
     ValUnit -> text "()"
     ValPrim x args ty -> pretty x <> tupled (map pretty args) <> text "::" <> pretty ty
     ValIndex p ofs -> pretty p <> brackets (pretty ofs)
@@ -55,20 +58,20 @@ instance (Pretty (Tag sym), PrimType primtypes, Pretty primval)
 -- ---------------------------------------------------------------------------
 
 
-n0, n1, n2, n3, p0, p1, p2, p3 :: Val _ _ _ _
-n0 = ValVar v0 $ Typ TypNode
-n1 = ValVar v1 $ Typ TypNode
-n2 = ValVar v2 $ Typ TypNode
-n3 = ValVar v3 $ Typ TypNode
-p0 = ValVar v0 $ Typ TypINode
-p1 = ValVar v1 $ Typ TypINode
-p2 = ValVar v2 $ Typ TypINode
-p3 = ValVar v3 $ Typ TypINode
+n0, n1, n2, n3, p0, p1, p2, p3 :: Val sym primtypes primval
+n0 = ValVar v0 TypNode
+n1 = ValVar v1 TypNode
+n2 = ValVar v2 TypNode
+n3 = ValVar v3 TypNode
+p0 = ValVar v0 TypINode
+p1 = ValVar v1 TypINode
+p2 = ValVar v2 TypINode
+p3 = ValVar v3 TypINode
 
 
 
 
-isVar :: Val _ _ _ _
+isVar :: Val sym primtypes primval -> Bool
 isVar (ValVar _ _) = True
 isVar _ = False
 
@@ -77,7 +80,7 @@ isVar _ = False
 -- | Resolve type of the value
 valType :: Monad m => Val sym primtypes primval -> m (Typ primtypes)
 valType (ValNodeC _ _) = pure TypNode
-valType (ValConst x) = case getType x of
+valType (ValConst x) = valType x >>= \case
   TypNode -> pure TypINode
   _ -> fail "Val.getType: Const of non-node."
 valType (ValLit _ t) = pure t
@@ -90,27 +93,23 @@ valType (ValUnknown t) = pure t
 
 
 
-valFreeVars ::Val _ _ _ _ -> ESet.EnumSet Var
-valFreeVars = \case
-  ValNodeC _ xs -> mconcat $ map valFreeVars xs
-  ValConst v -> valFeeVars v
-  ValIndex x y -> valFreeVars x <> valFreeVars y
+valFreeVars :: Enum (Tag sym) => [Val sym primtypes primval] -> ESet.EnumSet Var
+valFreeVars = ESet.unions . map (\case
+  ValNodeC _ xs -> valFreeVars xs
+  ValConst v -> valFreeVars [v]
+  ValIndex x y -> valFreeVars [x, y]
   ValVar v _ -> ESet.singleton v
-  _ -> ESet.empty
+  _ -> ESet.empty )
 
 
 
-valFreeTagVars ::Val sym _ _ _ -> ESet.EnumSet (Tag sym)
-valFreeTagVars = \case
-  ValNodeC t xs -> ESet.insert t mconcat (map valFreeTagVars xs)
-  ValConst v -> valFreeTagVars v
-  ValIndex x y -> valFreeTagVars x <> valFreeTagVars y
-  _ -> ESet.empty
+valFreeTagVars :: Enum (Tag sym) => [Val sym primtypes primval] -> ESet.EnumSet (Tag sym)
+valFreeTagVars = ESet.unions . map (\case
+  ValNodeC t xs -> ESet.insert t $ valFreeTagVars xs
+  ValConst v -> valFreeTagVars [v]
+  ValIndex x y -> valFreeTagVars [x, y]
+  _ -> ESet.empty )
 
-
-
-valFreeTagVars' :: [Val sym _ _ _] -> ESet.EnumSet (Tag sym)
-valFreeTagVars' = mconcat valFreeTagVars
 
 
 -- ---------------------------------------------------------------------------
@@ -119,15 +118,15 @@ valFreeTagVars' = mconcat valFreeTagVars
 -- | ???
 properHole :: Typ primtypes -> Val sym primtypes primval
 properHole x = case x of
-  TypINode -> ValConst $ ValNodeC $ ValHole 0 []
+  TypINode -> ValConst $ ValNodeC (Tag $ TagHole 0) []
   TypPrim _ -> ValLit 0 x
-  TypNode -> ValNodeC $ ValHole 0 []
+  TypNode -> ValNodeC (Tag $ TagHole 0) []
   _ -> error "No proper hole"
 
 
-isHole :: Val sym primtypes primval -> Bool
+isHole :: Eq (Val sym primtypes primval) => Val sym primtypes primval -> Bool
 isHole x = x == y || x == ValConst y
-  where y = ValNodeC $ ValHole 0 []
+  where y = ValNodeC (Tag $ TagHole 0) []
 
 
 
