@@ -32,6 +32,9 @@ library:
     - GeneralizedNewtypeDeriving
   dependencies:
     - base >= 4.7 && < 5
+    - containers
     - ansi-wl-pprint
+    - jhc-logger
+    - jhc-solvers == 0.8.2.0
 
 

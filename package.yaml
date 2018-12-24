@@ -102,7 +102,7 @@ executables:
     - binary
     - jhc == 0.8.2.0
     - jhc-logger
-    - jhc-solver == 0.8.2.0
+    - jhc-solvers == 0.8.2.0
     - monad-freshid
     - language-grin-jhc == 0.8.2.0
 
