@@ -17,7 +17,7 @@ import Language.Grin.Internal.Classes
 
 data Val sym primtypes primval
   = ValNodeC !(Tag sym) ![Val sym primtypes primval]
-  | ValConst !(Val sym primtypes Rational primval)
+  | ValConst !(Val sym primtypes primval)
   | ValLit !Rational !(Typ primtypes)
   | ValVar !Var !(Typ primtypes)
   | ValUnit
@@ -113,5 +113,24 @@ valFreeTagVars' :: [Val sym _ _ _] -> ESet.EnumSet (Tag sym)
 valFreeTagVars' = mconcat valFreeTagVars
 
 
+-- ---------------------------------------------------------------------------
+--
+
+-- | ???
+properHole :: Typ primtypes -> Val sym primtypes primval
+properHole x = case x of
+  TypINode -> ValConst $ ValNodeC $ ValHole 0 []
+  TypPrim _ -> ValLit 0 x
+  TypNode -> ValNodeC $ ValHole 0 []
+  _ -> error "No proper hole"
+
+
+isHole :: Val sym primtypes primval -> Bool
+isHole x = x == y || x == ValConst y
+  where y = ValNodeC $ ValHole 0 []
+
+
+
+-- vim: ts=8 sw=2 expandtab :
 
 

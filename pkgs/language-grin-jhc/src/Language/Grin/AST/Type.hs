@@ -81,3 +81,9 @@ emptyTypeOfType :: TypeOfType sym primtypes
 emptyTypeOfType = TypeOfType []  [] TypeNotThunk Nothing
 
 
+
+-- ---------------------------------------------------------------------------
+
+
+-- vim: ts=8 sw=2 expandtab :
+

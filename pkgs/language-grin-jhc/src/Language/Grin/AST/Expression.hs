@@ -152,7 +152,7 @@ instance (Pretty expr,
                    <> line <> go vl e2
       ExprBaseOp Demote vs -> vl <+> applyKwd "demote" vs
       ExprBaseOp (StoreNode b) vs
-        -> vl <+> H.keyword (text $ bool "dstore" "istore" b)
+        -> vl <+> H.keyword (text $ bool "istore" "dstore" b)
               <+> case vs of
                     [x] -> pretty x
                     [x, y] -> pretty x <> char '@' <> pretty y
