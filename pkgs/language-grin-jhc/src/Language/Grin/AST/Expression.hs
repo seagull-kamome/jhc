@@ -232,98 +232,117 @@ instance (Pretty expr,
 
 
 
+
+-- ---------------------------------------------------------------------------
+
+
+exprFreeVars :: Expr e Expression'' => e -> Set.EnumSet Var
+exprFreeVars expr = case exprUnwrap expr of
+  ExprBind e lam -> exprFreeVars e <> lamFreeVars lam
+  ExprBaseOp _ vs -> mconcat $ map valFreeVars vs
+  ExprApp _ vs _ -> mconcat $ map valFreeVars vs
+  ExprPrim _ vs _ -> mconcat $ map valFreeVars vs
+  ExprCase v lams -> valFreeVars v <> mconcat (map lamFreeVars lams)
+  ExprReturn vs -> mconcat $ map valFreeVars vs
+  ExprError -> ESet.empty
+  ExprCall v args -> valFreeVars v <> mconcat (map valFreeVars args)
+  ExprNewRegion lam _ -> lanFreeVars lam
+  ExprAlloc v c r _ -> valFreeVars v <> valFreeVars c <> valFreeVars r
+  ExprLet dfs bdy _ _ _ _ ->  mconcat (map (funcFreeVars . funcDefProps) dfs) <> exprFreeVars bdy
+  ExprMkClosure v args rgn -> mconcat $ map valFreeVars (v:rgn:args)
+  ExprMkCont c lam _ -> lamFreeVars c <> lamFreeVars lam
+  ExprGCRoots v e -> valFreeVars v <> exprFreeVars e
+
+
+
+
+exprFreeVarTags :: Expr e Expression'' => e -> Set.Set (Tag (ExprSym e))
+exprFreeTagVars expr = case exprUnwrap expr of
+  ExprBind e lam -> exprFreeTagVars e <> lamFreeTagVars lam
+  ExprBaseOp _ vs -> valFreeTagVars' vs
+  ExprApp _ vs _ -> valFreeTagVars' vs
+  ExprPrim _ vs _ -> valFreeTagVars' vs
+  ExprCase v lams -> valFreeVars v <> lamFreeTagVars lams
+  ExprReturn vs -> valFreeTagVars' vs
+  ExprError _ _ -> ESet.empty
+  ExprCall v args _ _ _ _ -> valFreeTagVars' (v:args)
+  ExprNewRegion lam _ -> lamFreeTagVars lam
+  ExprAlloc v c r _ -> valFreeTagVars' (v:c:r)
+  ExprLet dfs bdy _ _ _ _ -> mconcat (map (lamFreeTagVars . funcDefBody) dsf) <> exprFreeTagVars bdy
+  ExprMkClosure v args r _ _ -> mconcat $ map valFreeTagVars (v:r:args)
+  ExprMkCont c lam _ -> lamFreeTagVars c <> lamFreeTagVars lam
+  ExprGCRoots vs e -> valFreeTagVars' vs <> exprFreeTagVars e
+
+
+
+
+
+
+exprType :: (Monad m, Expr e Expression'') => e -> m (Typ (ExprPrimTypes e))
+exprType expr = case exprUnwrap expr of
+  ExprBind _ (Lanmbda _ bdy) -> exprType bdy
+  ExprBaseOp{..} -> case expBaseOp of
+      Demote -> Right [TypINode]
+      Promote -> Right [TypINode]
+      Eval -> Right [TypNode]
+      Apply ty -> Right ty
+      StoreNode True -> Right [TypNode]
+      StoreNode False -> Right [TypINode]
+      Redirect -> Right []
+      OverWrite -> Right []
+      PeekVal -> case expArgs of 
+                   [v] -> case valType v of
+                            Right (TypRegister t) -> RIghtt [t]
+                            RIght -> Right "exprType: PeekVal of non-pointer type."
+                            Left x -> Left x
+                   _ -> Left "exprType: Bad argments of PeekVal."
+      GcTouch -> Right []
+      Coerce t -> Right [t]
+      NewReigster -> map (TypRegister . valType) expArgs
+      WriteRegister -> Right []
+      ReadRegister -> case expArgs of
+                          [v] -> case valType v of
+                                   Right (TypRegister t) -> Right [t]
+                                   Left x -> Left x
+                                   _ -> Left "exprType: ReadRegister of non register."
+                          _ -> Left "exprType: Bad arguments of ReadRegister."
+      Apply ty -> Right ty
+      _ -> Left "exprType: Bad BaseOp."
+  ExpApp _ _ ty-> ty
+  ExpPrim _ _ ty -> ty
+  ExprCase _ (x:_) -> exprType x
+  ExorReturn xs -> valType' xs
+  ExprError _ t -> t
+  ExprCall _ _ ty _ _ _ -> ty
+  ExprNewRegion (Lambda _ bdy) _ -> exprType bdy
+  ExprAlloc v _ _ _ -> pure <$> valType v
+  ExprLet _ bdy _ _ _ _ -> exprType bdy
+  ExprMkClosure _ _ _ ty _ -> ty
+  ExprMkCont _ (Lambda _ bdy) _ -> exprType bdy
+  ExprGCRoots _ bdy -> exprType bdy
+  _ -> Left "exprType: bad"
+
+
+
+
 -- ---------------------------------------------------------------------------
 
 newtype Expression sym primtypes primopr primval
-  = Expression {
-    unwrap :: Expression'' sym primtypes primopr primval
-                           (Expression sym primtypes primopr primval)
-  }
+  = Expression (
+    Expression'' sym primtypes primopr primval
+                 (Expression sym primtypes primopr primval) )
   deriving (Show, Eq, Ord)
 
 instance Pretty (Expression sym primtypes primopr primval) where
   pretty (Expression x) = pretty x
 
+instance Expr (Expression sym primtypes primopr primval) Expression'' where
+  type ExprSym (Expression sym primtypes primopr primval) = sym
+  type ExprPrimType (Expression sym primtypes primopr primval) = primtype
+  type ExprPrimOpr (Expression sym primtypes primopr primval) = primopr
+  type ExprPrimVal (Expression sym primtypes primopr primval) = primval
+  exprUnwrap (Expression x) = x
 
---
---
---
-instance Expr sym primtypes (Expression sym primtypes primopr primval) where
-  exprType (Expression expr) = case expr of
-      ExprBind _ (Lanmbda _ bdy) -> exprType bdy
-      ExprBaseOp{..} -> case expBaseOp of
-          Demote -> Right [TypINode]
-          Promote -> Right [TypINode]
-          Eval -> Right [TypNode]
-          Apply ty -> Right ty
-          StoreNode True -> Right [TypNode]
-          StoreNode False -> Right [TypINode]
-          Redirect -> Right []
-          OverWrite -> Right []
-          PeekVal -> case expArgs of 
-                       [v] -> case valType v of
-                                Right (TypRegister t) -> RIghtt [t]
-                                RIght -> Right "exprType: PeekVal of non-pointer type."
-                                Left x -> Left x
-                       _ -> Left "exprType: Bad argments of PeekVal."
-          GcTouch -> Right []
-          Coerce t -> Right [t]
-          NewReigster -> map (TypRegister . valType) expArgs
-          WriteRegister -> Right []
-          ReadRegister -> case expArgs of
-                              [v] -> case valType v of
-                                       Right (TypRegister t) -> Right [t]
-                                       Left x -> Left x
-                                       _ -> Left "exprType: ReadRegister of non register."
-                              _ -> Left "exprType: Bad arguments of ReadRegister."
-          Apply ty -> Right ty
-          _ -> Left "exprType: Bad BaseOp."
-      ExpApp _ _ ty-> ty
-      ExpPrim _ _ ty -> ty
-      ExprCase _ (x:_) -> exprType x
-      ExorReturn xs -> valType' xs
-      ExprError _ t -> t
-      ExprCall _ _ ty _ _ _ -> ty
-      ExprNewRegion (Lambda _ bdy) _ -> exprType bdy
-      ExprAlloc v _ _ _ -> pure <$> valType v
-      ExprLet _ bdy _ _ _ _ -> exprType bdy
-      ExprMkClosure _ _ _ ty _ -> ty
-      ExprMkCont _ (Lambda _ bdy) _ -> exprType bdy
-      ExprGCRoots _ bdy -> exprType bdy
-      _ -> Left "exprType: bad"
-
-  --
-  exprFreeVars (Expression expr) = case expr of
-      ExprBind e lam -> exprFreeVars e <> lamFreeVars lam
-      ExprBaseOp _ vs -> mconcat $ map valFreeVars vs
-      ExprApp _ vs _ -> mconcat $ map valFreeVars vs
-      ExprPrim _ vs _ -> mconcat $ map valFreeVars vs
-      ExprCase v lams -> valFreeVars v <> mconcat (map lamFreeVars lams)
-      ExprReturn vs -> mconcat $ map valFreeVars vs
-      ExprError -> ESet.empty
-      ExprCall v args -> valFreeVars v <> mconcat (map valFreeVars args)
-      ExprNewRegion lam _ -> lanFreeVars lam
-      ExprAlloc v c r _ -> valFreeVars v <> valFreeVars c <> valFreeVars r
-      ExprLet dfs bdy _ _ _ _ ->  mconcat (map (funcFreeVars . funcDefProps) dfs) <> exprFreeVars bdy
-      ExprMkClosure v args rgn -> mconcat $ map valFreeVars (v:rgn:args)
-      ExprMkCont c lam _ -> lamFreeVars c <> lamFreeVars lam
-      ExprGCRoots v e -> valFreeVars v <> exprFreeVars e
-  --
-  exprFreeTagVars (Expression expr) = case expr of
-      ExprBind e lam -> exprFreeTagVars e <> lamFreeTagVars lam
-      ExprBaseOp _ vs -> valFreeTagVars' vs
-      ExprApp _ vs _ -> valFreeTagVars' vs
-      ExprPrim _ vs _ -> valFreeTagVars' vs
-      ExprCase v lams -> valFreeVars v <> lamFreeTagVars lams
-      ExprReturn vs -> valFreeTagVars' vs
-      ExprError _ _ -> ESet.empty
-      ExprCall v args _ _ _ _ -> valFreeTagVars' (v:args)
-      ExprNewRegion lam _ -> lamFreeTagVars lam
-      ExprAlloc v c r _ -> valFreeTagVars' (v:c:r)
-      ExprLet dfs bdy _ _ _ _ -> mconcat (map (lamFreeTagVars . funcDefBody) dsf) <> exprFreeTagVars bdy
-      ExprMkClosure v args r _ _ -> mconcat $ map valFreeTagVars (v:r:args)
-      ExprMkCont c lam _ -> lamFreeTagVars c <> lamFreeTagVars lam
-      ExprGCRoots vs e -> valFreeTagVars' vs <> exprFreeTagVars e
 
 
 -- vim: ts=8 sw=2 expandtab :

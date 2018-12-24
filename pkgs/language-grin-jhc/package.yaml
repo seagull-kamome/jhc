@@ -30,6 +30,7 @@ library:
     - LambdaCase
     - ExistentialQuantification
     - GeneralizedNewtypeDeriving
+    - TypeFamilies
   dependencies:
     - base >= 4.7 && < 5
     - containers

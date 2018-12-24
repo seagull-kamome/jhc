@@ -13,10 +13,13 @@ import Language.Grin.AST.Type
 
 -- ---------------------------------------------------------------------------
 
-class Expr sym primtypes expr | expr -> sym, expr -> primtypes where
-  exprFreeVars :: expr -> Set.EnumSet Var
-  exprFreeTagVars :: expr -> Set (Tag sym)
-  exprType :: Monad m => expr -> m [Typ primtypes]
+class Expr e (e'' :: * -> * -> * -> * -> * -> *) | e -> e'' where
+  type ExprSym e :: *
+  type ExprPrimTypes e :: *
+  type ExprPrimOpr e :: *
+  type ExprPrimval e :: *
+  exprUnwrap :: e -> e'' (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e
+
 
 
 class PrimType primtypes where
