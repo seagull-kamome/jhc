@@ -42,7 +42,7 @@ instance (Pretty (Tag sym), PrimType primtypes, Pretty primval)
       TypINode -> "ni" <> int n
       TypPrim prim -> text (T.unpack $ varPrefix prim) <> int i
       TypRegion -> "m" <> int n
-      TypGCContext -> "gc" <> int n
+      TypGcContext -> "gc" <> int n
       TypRegister t' -> "r" <> pretty (VarVal v t')
       _ -> pretty v
     ValUnit -> text "()"
@@ -55,7 +55,7 @@ instance (Pretty (Tag sym), PrimType primtypes, Pretty primval)
 -- ---------------------------------------------------------------------------
 
 
-n0, n1, n2, n3, p0, p1, n2, p3 :: Val _ _ _ _
+n0, n1, n2, n3, p0, p1, p2, p3 :: Val _ _ _ _
 n0 = ValVar v0 $ Typ TypNode
 n1 = ValVar v1 $ Typ TypNode
 n2 = ValVar v2 $ Typ TypNode

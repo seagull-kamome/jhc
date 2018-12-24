@@ -4,7 +4,7 @@ module Language.Grin.AST.Program (
 
 
 import qualified Data.Text as T
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import Language.Grin.AST.Val
@@ -23,13 +23,13 @@ data OpitimizingPhase
 
 data Program sym primtypes primopr primval
   = Program {
-    progEntryPoints :: Map.Map sym FFIExport,
-    progOptimizingPhase :: OptimizingPhase,
-    progTypeEnv :: TypeEnv sym primtypes,
-    progFunctions :: [FuncDef sym primtypes primval (Expression sym primtypes primopr primval)],
-    progSuspFunctions :: Set.Set sym,
-    progPartFUnctions :: Set.Set sym,
-    progCafs :: [(Var, Val sym primtypes primval)]
+    progEntryPoints :: !(Map.Map sym FFIExport),
+    progOptimizingPhase :: !OptimizingPhase,
+    progTypeEnv :: !(TypeEnv sym primtypes),
+    progFunctions :: ![FuncDef sym primtypes primval (Expression sym primtypes primopr primval)],
+    progSuspFunctions :: !(Set.Set sym),
+    progPartFUnctions :: !(Set.Set sym),
+    progCafs :: ![(Var, Val sym primtypes primval)]
     }
 
 
@@ -40,6 +40,14 @@ data Program sym primtypes primopr primval
 emptyProgram :: Program sym primtypes primopr primval
 emptyProgram = Program mempty OPhaseInit mempty mempty mempty mempty mempty
 
+
+
+  {-
+setGrinFunctions xs _grin | flint && hasRepeatUnder fst xs
+  = error $ "setGrinFunctions: grin has redundent definitions" ++ show (fsts xs)
+setGrinFunctions xs grin
+  = grin { grinFunctions = map (uncurry (newFuncDef False)) xs }
+-}
 
 
 
