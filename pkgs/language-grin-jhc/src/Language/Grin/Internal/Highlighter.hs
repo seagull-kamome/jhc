@@ -1,20 +1,27 @@
 module Language.Grin.Internal.Highlighter (
-  operator, keyword, funcname, primitive
+  opr, kwd, fncname, prim,
+  opr', kwd', fncname', prim'
   ) where
 
 import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
+import GHC.Exts (IsString(..))
+
+
 
 -- ---------------------------------------------------------------------------
 
-operator, keyword, funcname, primitive :: Doc -> Doc
-operator = id
-keyword = id
-funcname = id
-primitive = id
-{-# INLINE operator #-}
-{-# INLINE keyword #-}
-{-# INLINE funcname #-}
-{-# INLINE primitive #-}
+opr, kwd, fncname, prim :: Doc -> Doc
+opr = id
+kwd = id
+fncname = id
+prim = id
+
+
+opr', kwd', fncname', prim' :: IsString str => str -> Doc
+opr' = text . toString
+kwd' = text . toString
+fncname' = text . toString
+prim' = text . toString
 
 
