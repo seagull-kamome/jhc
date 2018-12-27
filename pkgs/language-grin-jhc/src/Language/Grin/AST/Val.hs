@@ -27,7 +27,7 @@ data Val sym primtypes primval
   | ValItem !sym !(Typ primtypes)
   | ValUnknown !(Typ primtypes)
   deriving (Eq, Ord)
-
+type ExpVal exp = Val (ExprSym exp) (ExpPrimTypes exp) (ExpPrimVal exp)
 
 
 instance (Pretty (Tag sym), Pretty sym, Pretty (Typ primtypes),

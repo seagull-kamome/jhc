@@ -1,4 +1,4 @@
-module Grin.Noodle where
+module Language.Grin.Noodle where
 
 -- various routines for manipulating and exploring grin code.
 
