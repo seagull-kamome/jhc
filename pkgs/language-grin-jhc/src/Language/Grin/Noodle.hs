@@ -71,20 +71,6 @@ mapExpVal g x = f x where
         return (Case v as)
     f e = return e
 
-mapValVal fn x = f x where
-    f (NodeC t vs) = return (NodeC t) `ap` mapM fn vs
-    f (Index a b) = return Index `ap` fn a `ap` fn b
-    f (Const v) = return Const `ap` fn v
-    f (ValPrim p vs ty) = return (ValPrim p) `ap` mapM fn vs `ap` return ty
-    f x = return x
-
-mapValVal_ fn x = f x where
-    f (NodeC t vs) = mapM_ fn vs
-    f (Index a b) = fn a >> fn b >> return ()
-    f (Const v) = fn v >> return ()
-    f (ValPrim p vs ty) =  mapM_ fn vs >> return ()
-    f _ = return ()
-
 mapExpLam fn e = f e where
     f (a :>>= b) = return (a :>>=) `ap` fn b
     f (Case e as) = return (Case e) `ap` mapM fn as
@@ -144,16 +130,6 @@ isManifestNode e = f (sempty :: GSet Atom) e where
         return $ concat cs
     f lf (_ :>>= _ :-> e) = isManifestNode e
     f lf _ = fail "not manifest node"
-
--- | Is a Val constant?
-valIsConstant :: Val -> Bool
-valIsConstant (NodeC _ xs) = all valIsConstant xs
-valIsConstant Lit {} = True
-valIsConstant Const {} = True
-valIsConstant (Var v _) | v < v0 = True
-valIsConstant (Index v t) = valIsConstant v && valIsConstant t
-valIsConstant ValPrim {} = True
-valIsConstant _ = False
 
 -- NOPs will not produce any code at run-time so we can tail-call through them.
 isNop (BaseOp Promote _) = True

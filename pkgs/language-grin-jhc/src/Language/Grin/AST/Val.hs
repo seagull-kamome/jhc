@@ -1,11 +1,13 @@
 module Language.Grin.AST.Val (
   Val(..), n0, n1, n2, n3, p0, p1, p2, p3, isVar,
   valType, valFreeVars, valFreeTagVars,
+  valIsConstant,
   properHole, isHole
   ) where
 
 import qualified Data.Text as T
 import qualified Data.EnumSet.EnumSet as ESet
+import Data.Mono.Traversable
 
 import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
@@ -109,6 +111,39 @@ valFreeTagVars = ESet.unions . map (\case
   ValConst v -> valFreeTagVars [v]
   ValIndex x y -> valFreeTagVars [x, y]
   _ -> ESet.empty )
+
+
+
+valIsConstant :: Val sym primtype primval -> Bool
+valIsConstant = \case
+  ValNodeC _ xs -> all valIsConstant xs
+  Lit{}   -> True
+  Const{} -> True
+  Var (Var v) _ | v < 0 -> True
+  Index v t -> valIsConstant v && valIsConstant t
+  ValPrim{} -> True
+  _ -> False
+
+
+
+valTransformM :: Monad m
+           => (Val a b c -> m (Val d e f)) -> Val a b c -> m (Val d e f)
+valTransformM f = \case
+  ValNodeC t vs -> ValNodeC t <$> mapM f vs
+  ValIndex a b  -> ValIndex <$>  f a <*> f b
+  ValConst v    -> ValConst <$> f v
+  ValValPrim p vs ty -> ValPrim p <$> mapM f vs <*> pure ty
+  x -> pure x
+
+
+
+valTransformM_ :: Monad m => (Val a b c -> m a) -> Val a b c -> m ()
+valTransformM_ f = \case
+  ValNodeC t vs -> mapM_ f vs
+  ValIndex a b  -> f a >> f b >> pure ()
+  ValConst v    -> f v >> pure ()
+  ValValPrim p vs ty ->  mapM_ f vs
+  _ -> pure ()
 
 
 
