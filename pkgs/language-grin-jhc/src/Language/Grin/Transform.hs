@@ -1,28 +1,201 @@
-module Grin.Whiz(whiz, fizz, WhizState, whizState, normalizeGrin,normalizeGrin', applySubstE, applySubst, whizExps) where
+module Language.Grin.Transform(
+  whiz, fizz, WhizState, whizState, normalizeGrin,normalizeGrin', applySubstE, applySubst, whizExps,
+  --
+  lamTransformPatterns, lamTransformBody,
+  --
+  funcdefTransformLam,
+  --
+  exprTransformVal, exprTransformLam, exprTransformLet, exprTransformExpr,
+  exprIsNop, exprIsOmittable, exprIsErrOmittable,
+  ) where
 
-import Control.Monad.Identity
-import Control.Monad.State
-import Control.Monad.Writer
-import Util.GMap
-import Util.HasSize
-import Util.SetLike
-import qualified Data.Set as Set
+import Control.Monad.Fresh.Flat
+import qualified Data.EnumMap.EnumMap.Strict as EMap
 
-import Grin.Grin
-import Grin.Noodle
-import Support.CanType
+import Language.Grin.AST.Val
+import Language.Grin.AST.Var
+import Language.Grin.AST.Lambda
+import Language.Grin.AST.Expression
+import Language.Grin.Internal.Classes
 
-type WhizState = Either (Set.Set Int) Int
-type WhizEnv = GMap Var Val
 
-whizState :: WhizState
-whizState = Left mempty
 
---normalizeGrin :: Grin -> Grin
---normalizeGrin grin@Grin { grinFunctions = fs } = grin { grinFunctions = f fs [] (Right 1) } where
---    f [] xs _ = xs
---    f ((a,(Tup vs,fn)):xs) ys set = f xs ((a,(Tup vs',fn')):ys) set' where
---        (Identity ((NodeC _ vs',fn'),set')) = whiz return return set (NodeC tagHole vs , fn)
+-- ---------------------------------------------------------------------------
+-- Transform Lambda
+
+
+
+lamTransformPatterns :: Monad m
+                     => ([Val sym primtypes primval] -> m [Val sym primtypes primval])
+                     -> Lambda sym primtypes primval expr
+                     -> m (Lambda sym primtypes primval)
+lambdaTransformPatterns f Lambda{..} = Lambda <$> f lamBind <*> pure lamExpr
+
+
+
+lamTransformBody :: Monad m
+                 => (expr -> m expr) -> Lambda a b c expr -> Lambda a b c expr
+lamTransformBody f Lambda{..} = Lambda lamBind <$> f lamExpr
+
+
+
+
+-- ---------------------------------------------------------------------------
+-- Transform FuncDef
+
+
+funcdefTransformLam :: (Monad m, Expr Expression'' expr,
+                     lam ~ Lambda (ExprSym expr) (ExprPrimType expr) (ExprPrimVal expr) expr)
+                  => (lam -> m lam)
+                  -> FuncDef (ExprSym expr) (ExprPrimTypes expr) (ExprPrimVal expr) expr
+                  -> m (FuncDef (ExprSym expr) (ExprPrimTypes expr) (ExprPrimVal expr) expr)
+funcdefTransformLam f FuncDef{..} =
+  FuncDef funcdefName <$> f funcdefBOdy <*> pure funcdefCall
+                      <*> pure (modifyFuncDefProps lam funcDefProps)
+
+
+
+-- ---------------------------------------------------------------------------
+-- Transform Expression
+
+
+exprTransformVal :: (Monad m, Exp Expression'' expr,
+                     val ~ Val (ExrpSym expr) (ExprPrimType expr) (ExprPrimVal expr))
+                 => (val -> m val) -> expr -> m expr
+exprTransformVal f x = exprWrap $ case exprUnwrap x of
+  ExprApp a vs t -> ExprApp <$> mapM f vs <*> pure t
+  ExprBaseOp a vs -> ExprBaseOp a <$> mapM f vs
+  ExpReturn vs -> ExprReturn <$> mapM f vs
+  ExprPrim y vs t -> ExprPrim y <$> mapM f vs <*> pure t
+  ExprAlloc y z a b -> ExprAlloc <$> f y <*> f z <*> pure a <*> pure b
+  ExprCase y z -> ExprCase <$> f y <*> pure z
+  e -> e
+
+
+
+
+
+exprTransformLam :: (Monad m, Expr Expression'' expr,
+                     lam ~ Lambda (ExprSym expr) (ExprPrimType expr) (ExprPrimVal expr) expr)
+                 => (lam -> m lam) -> expr -> m expr
+exprTransformLam f x = exprWrap $ case exprUnwrap x of
+  ExprBind y z -> ExprBind y <$> f z
+  y@ExprLet{..} -> exprTransformLet (funcdefTransformLam f) y
+  ExprNewRegion y z -> ExprNewRegion <$> f y <*> pure z
+  ExprMkCont c l i -> ExprMkCont <$> f c <*> f l <*> pure i
+  e -> pure e
+
+
+
+exprTransformLet :: (Monad m, Expr Expression'' expr,
+                     fncdef ~FuncDef (ExprSym expr) (ExprPrimType expr) (ExprPrimVal expr) expr)
+                 => (fncdef -> m fncdef) -> expr -> m expr
+exprTransformLet f x = exprWrap $ case exprUnwrap x of
+  lt@ExprLet{..}
+    | null exprDefs -> pure exprBody
+    | otherwise -> do
+        d <- mapM f expDefs
+        let (tail,nonTail) = mconcatMap collectFuncs (body : map (lamExp . funcDefBody) defs)
+            notNormal =  nonTail `intersection` fromList (map funcDefName defs)
+            myDefs = fromList $ map funcDefName defs
+        return $ lt { expDefs = d', 
+                      expunCalls = (tail \\ myDefs, nonfail \\ myDefs),
+                      expNonNormal = notNormal,
+                      expIsNormal = isEmpty notNormal }
+  e -> pure e
+
+
+
+exprTransformExpr :: (Monad m, Expr Expression'' expr)
+                  => (expr -> m expr) -> expr -> m expr
+exprTransformExpr f x = exprWrap $ case exprUnwrap x of
+  ExprBind e1 l -> ExprBind <$> f a <*> lamTransformBOdy f l
+  ExprLet{..} -> exprTransformLet (funcdefTransformLam (lamTransformBody f)) x
+  _ -> exprTransformLam (lamTransformBody f)
+
+
+
+
+
+
+
+-- ---------------------------------------------------------------------------
+
+
+renamePattern :: (Monad m, MonadFresh m)
+              => [ExpVal exp]
+              -> EMap.EnumMap Var Val
+              -> m ([ExpVal exp], EMap.ENumMap Var Val)
+renamePattern = go []
+  where
+    go r [] env = return (r, env)
+    go r (x:xs) env =
+      case x of
+        ValVar v t -> do
+          nv <- ValVar <$> fresh <*> pure t
+          env' <- EMap.insert nv env
+          go (nv:r) xs env'
+        ValNodeC t vs -> do
+          (vs', env') <- renamePattern vs env
+          go (NodeC t vs':r) xs env'
+        ValIndex a b -> do
+          ([a'], env') <- renamePattern [a] env
+          ([b'], env'') <- renamePattern [b] env'
+          go (ValIndex a' b':r) xs env''
+
+
+
+
+transformFunction :: (Monad m, MonadFresh m, Expression Expression'' exp)
+                  => ([ExpVal exp] -> m ())
+                  -> (([ExpVal exp], exp) -> m (ExpVal exp Val, exp))
+                  -> (exp -> m exp)
+                  -> ExpLambda exp
+                  -> m (ExpLambda exp)
+transformFunction sub te tf = dc empty
+  where
+    dc env (Lambda p e) = do
+       (p', env') <- renamePattern p env
+       sub p'
+       (z, _) <- f e [] env'
+       return (Lambda p' z)
+    --
+    f (ExprBind a (Lambda v b)) xs env = f a ((env, v, b):xs) env
+    f a@(Return (xs@(_:_:_))) ((senv,p@(ys@(_:_:_)),b):rs) env | length xs == length ys  = do
+        Return xs <- mapExpVal (applySubst env) a
+        (ys, env') <- renamePattern p
+        ts <- mapM te [([y],Return [x]) | x <- xs | y <- ys ]
+        z <- f b rs (env' <> senv)
+        let h [] = z
+            h ((p,v):rs) = v :>>= p :-> h rs
+        return $ h [ (p,v) |  Just (p,v) <- ts]
+    f a ((senv, p, b):xs) env = do
+        a'' <- g env a
+        (p'', env') <- renamePattern p
+        x <- te (p'', a'')
+        z <- f b xs (env' <> senv)
+        return $ case x of
+            Just (p',a') -> ExprBind a' (Lambda p' z)
+            Nothing -> z
+    f x [] env = g env x >>= tf
+    --
+    g env (ExprCase v as) = ExprCase <$> applySubst env v <*> mapM (dc env) as
+    g env (ExprGcRoots vs body) = ExprGcRoots <$> mapM (applySubst env) vs <*> f body [] env
+    g env lt@ExprLet {..} = do
+        body <- f expBody [] env
+        defs <- forM expDefs $ \case FuncDef {..} -> createFuncDef True funcDefName <$> dc env funcDefBody
+        return $ updateLetProps lt { expBody = body, expDefs = defs }
+    g env x = mapExpVal (applySubst env) x
+
+
+
+-- ---------------------------------------------------------------------------
+
+
+sRepeatUnder f xs = any (not . null . tail) $ sortGroupUnder f xs
+hasRepeatUnder f xs = any (not . null . tail) $ sortGroupUnder f xs
+
+
 normalizeGrin :: Grin -> Grin
 normalizeGrin grin = setGrinFunctions (f (grinFuncs grin) [] (Right 1)) grin  where
     f [] xs _ = reverse xs
@@ -38,84 +211,8 @@ normalizeGrin' grin = setGrinFunctions (f (grinFuncs grin) []) grin  where
 whizExps :: Monad m => (Exp -> m Exp) -> Lam -> m Lam
 whizExps f l = liftM fst $ whiz (\_ x -> x) (\(p,e) -> f e >>= \e' -> return  (Just (p,e'))) f whizState l
 
--- | magic traversal and flattening routine.
--- whiz traverses Grin code and right assosiates it as well as renaming and
--- repeated variables along the way.
--- in addition, it provides a nice monadic traversal of the flattened renamed code suitable
--- for a wide range of grin -> grin transformations.
--- basically, you may use 'whiz' to perform tranformations which do not require lookahead, and depend
--- only on the code that happened before.
--- note that a case is presented after all of its sub code blocks have been processed
--- Whiz also vectorizes tuple->tuple assignments, breaking them into individual assignments
--- for its components to better aid future optimizations.
 
-whiz :: Monad m =>
-    (forall a . [Val] -> m a -> m a)         -- ^ called for each sub-code block, such as in case statements
-    -> (([Val],Exp) -> m (Maybe ([Val],Exp)))  -- ^ routine to transform or omit simple bindings
-    -> (Exp -> m Exp)       -- ^ routine to transform final statement in code block
-    -> WhizState            -- ^ Initial state
-    -> Lam                  -- ^ input lambda expression
-    -> m (Lam,WhizState)
-whiz sub te tf inState start = res where
-    res = runStateT (dc mempty start) inState
-    f (a :>>= (v :-> b)) xs env = f a ((env,v,b):xs) env
-    f a@(Return (xs@(_:_:_))) ((senv,p@(ys@(_:_:_)),b):rs) env | length xs == length ys  = do
-        Return xs <- g env a
-        (ys,env') <- renamePattern p
-        ts <- lift $ mapM te [([y],Return [x]) | x <- xs | y <- ys ]
-        z <- f b rs (env' `mappend` senv)
-        let h [] = z
-            h ((p,v):rs) = v :>>= p :-> h rs
-        return $ h [ (p,v) |  Just (p,v) <- ts]
-    f a ((senv,p,b):xs) env = do
-        a <- g env a
-        (p,env') <- renamePattern p
-        x <- lift $ te (p,a)
-        z <- f b xs (env' `mappend` senv)
-        case x of
-            Just (p',a') -> do
-                return $ a' :>>= (p' :-> z)
-            Nothing -> do
-                return z
-    f x [] env = do
-        x <- g env x
-        lift $ tf x
-    g env (Case v as) = do
-        v <- applySubst env v
-        as <- mapM (dc env) as
-        return $ Case v as
-    g env (GcRoots vs body) = do
-        vs <- mapM (applySubst env) vs
-        body <- f body [] env
-        return $ GcRoots vs body
---    g env lt@Let { expDefs = defs, expBody = Let { expDefs = defs', expBody = body } } = g env lt { expDefs = defs `mappend` defs', expBody = body }
-    g env lt@Let { expDefs = defs, expBody = body } = do
-        body <- f body [] env
-        let f def@FuncDef { funcDefName = n, funcDefBody = b } = do
-                b <- dc env b
-                return $ createFuncDef True n b
-        defs <- mapM f defs
-        return $ updateLetProps lt { expBody = body, expDefs = defs }
-    g env x = applySubstE env x
-    dc env (p :-> e) = do
-        (p,env') <- renamePattern p
-        g <- get
-        (z,g) <- lift $ sub p $ runStateT  (f e [] (env' `mappend` env)) g
-        put g
-        return (p :-> z)
 
--- | magic traversal and flattening routine.
--- whiz traverses Grin code and right assosiates it as well as renaming and
--- repeated variables along the way.
--- in addition, it provides a nice monadic traversal of the flattened renamed code suitable
--- for a wide range of grin -> grin transformations.
--- basically, you may use 'whiz' to perform tranformations which do not require lookahead, and depend
--- only on the code that happened before.
--- note that a case is presented after all of its sub code blocks have been processed
--- Whiz also vectorizes tuple->tuple assignments, breaking them into individual assignments
--- for its components to better aid future optimizations.
--- fizz is similar to whiz, but processes things in 'bottom-up' order.
--- fizz also removes all statements past an Error.
 
 fizz :: Monad m =>
     (forall a . [Val] -> m a -> m a)         -- ^ called for each sub-code block, such as in case statements
@@ -181,20 +278,6 @@ applySubst env x = f x where
     f var@(Var v _)
         | Just n <- mlookup v env =  return n
     f x = mapValVal f x
-
-renamePattern :: MonadState (WhizState) m => [Val] ->  m ([Val],WhizEnv)
-renamePattern x = runWriterT (mapM f x) where
-    f :: MonadState (WhizState) m => Val -> WriterT (WhizEnv) m Val
-    f (Var v t) = do
-        v' <- lift $ newVarName v
-        let nv = Var v' t
-        tell (msingleton v nv)
-        return nv
-    f (NodeC t vs) = do
-        vs' <- mapM f vs
-        return $ NodeC t vs'
-    f (Index a b) = return Index `ap` f a `ap` f b
-    f x = return x
 
 newVarName :: MonadState WhizState m => Var -> m Var
 newVarName (V sv) = do

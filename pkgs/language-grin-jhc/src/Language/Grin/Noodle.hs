@@ -53,60 +53,7 @@ instance Tickleable (Atom,Lam) FuncDef where
     (n',b') <- f (n,b)
     return $  updateFuncDefProps fd { funcDefBody = b', funcDefName = n' }
 
-mapBodyM :: Monad m => (Exp -> m Exp) -> Lam -> m Lam
-mapBodyM f (x :-> y) = f y >>= return . (x :->)
 
-mapExpVal :: Monad m => (Val -> m Val) -> Exp -> m Exp
-mapExpVal g x = f x where
-    f (App a vs t) = return (App a) `ap` mapM g vs `ap` return t
-    f (BaseOp a vs) = return (BaseOp a) `ap` mapM g vs
-    f (Return vs) = return Return `ap` mapM g vs
-    f (Prim x vs t) = return (Prim x) `ap` mapM g vs `ap` return t
-    f e@Alloc { expValue = v, expCount = c } = do
-        v <- g v
-        c <- g c
-        return e { expValue = v, expCount = c }
-    f (Case v as) = do
-        v <- g v
-        return (Case v as)
-    f e = return e
-
-mapExpLam fn e = f e where
-    f (a :>>= b) = return (a :>>=) `ap` fn b
-    f (Case e as) = return (Case e) `ap` mapM fn as
-    f lt@Let { expDefs = defs } = do
-        defs' <- forM defs $ \d -> do
-            b <- fn $ funcDefBody d
-            return $ updateFuncDefProps d { funcDefBody = b }
-        return $ updateLetProps lt { expDefs = defs' }
-    f nr@NewRegion { expLam = lam } = do
-        lam <- fn lam
-        return $ nr { expLam = lam }
-    f e@MkCont { expCont = c, expLam = l } = do
-        c <- fn c
-        l <- fn l
-        return $ e { expCont = c, expLam = l }
-    f e = return e
-
-mapExpExp fn e = f e where
-    f (a :>>= b) = return (:>>=) `ap` fn a `ap` g b
-    f l@Let { expBody = b, expDefs = defs } = do
-        b <- fn b
-        return updateLetProps `ap` (mapExpLam g l { expBody = b })
-    f (GcRoots vs e) = return (GcRoots vs) `ap` fn e
-    f e = mapExpLam g e
-    g (l :-> e) = return (l :->) `ap` fn e
-
-mapFBodies f xs = mapM f' xs where
-    f' fd@FuncDef { funcDefBody = l :-> r } = do
-        r' <- f r
-        return $  updateFuncDefProps fd { funcDefBody = l :-> r' }
-
-funcDefBody_uM f fd@FuncDef { funcDefBody = b } = do
-    b' <- f b
-    return $  updateFuncDefProps fd { funcDefBody = b' }
-
-grinFunctions_s nf grin = grin { grinFunctions = nf }
 
 --------------------------
 -- examining and reporting
@@ -130,33 +77,6 @@ isManifestNode e = f (sempty :: GSet Atom) e where
         return $ concat cs
     f lf (_ :>>= _ :-> e) = isManifestNode e
     f lf _ = fail "not manifest node"
-
--- NOPs will not produce any code at run-time so we can tail-call through them.
-isNop (BaseOp Promote _) = True
-isNop (BaseOp Demote _) = True
-isNop _ = False
-
-isOmittable (BaseOp Promote _) = True
-isOmittable (BaseOp Demote _) = True
-isOmittable (BaseOp PeekVal _) = True
-isOmittable (BaseOp ReadRegister _) = True
-isOmittable (BaseOp NewRegister _) = True
-isOmittable (BaseOp GcPush _) = True  -- omittable because if we don't use the returned gc context, then we don't need to push to begin with
-isOmittable (BaseOp (StoreNode _) _) = True
-isOmittable Alloc {} = True
-isOmittable (Return {}) = True
-isOmittable Prim { expPrimitive = aprim } = primIsCheap aprim
-isOmittable (Case x ds) = all isOmittable [ e | _ :-> e <- ds ]
-isOmittable Let { expBody = x } = isOmittable x
-isOmittable (e1 :>>= _ :-> e2) = isOmittable e1 && isOmittable e2
-isOmittable _ = False
-
-isErrOmittable (BaseOp Overwrite _) = True
-isErrOmittable (BaseOp PokeVal _) = True
-isErrOmittable (BaseOp WriteRegister _) = True
-isErrOmittable (e1 :>>= _ :-> e2) = isErrOmittable e1 && isErrOmittable e2
-isErrOmittable (Case x ds) = all isErrOmittable [ e | _ :-> e <- ds ]
-isErrOmittable x = isOmittable x
 
 -- collect tail and normally called functions
 -- expression (tail called, non tail called)
@@ -189,25 +109,6 @@ collectFuncs exp = runWriter (cfunc exp) where
             return (a `mappend` b)
         cfunc x = error "Grin.Noodle.collectFuncs: unknown"
 
-grinLet defs body = updateLetProps Let {
-    expDefs = defs,
-    expBody = body,
-    expInfo = mempty,
-    expNonNormal = undefined,
-    expIsNormal = undefined,
-    expFuncCalls = undefined }
-
-updateLetProps Let { expDefs = [], expBody = body } = body
-updateLetProps lt@Let { expBody = body, expDefs = defs } =
-        lt {
-            expFuncCalls = (tail \\ myDefs, nonTail \\ myDefs),
-            expNonNormal = notNormal,
-            expIsNormal = isEmpty notNormal
-            } where
-    (tail,nonTail) = mconcatMap collectFuncs (body : map (lamExp . funcDefBody) defs)
-    notNormal =  nonTail `intersection` (fromList $ map funcDefName defs)
-    myDefs = fromList $ map funcDefName defs
-updateLetProps e = e
 
 data ReturnInfo = ReturnNode (Maybe Atom,[Ty]) | ReturnConst Val | ReturnCalls Atom | ReturnOther | ReturnError
     deriving(Eq,Ord)

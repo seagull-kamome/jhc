@@ -1,7 +1,10 @@
 module Language.Grin.AST.Expression (
-  FuncDef(..), newFuncDef, updateFuncDef,
+  FuncDef(..), newFuncDef,
   --
-  Expression''(..), Expression(..)
+  Expression''(..),
+  exprFreeVars, exprFreeVarTags, exprType,
+  --
+  Expression(..)
   ) where
 
 import Data.Bool (bool)
@@ -49,13 +52,6 @@ newFuncDef local name lam = FuncDef {
                    (uncurry (TyCall (if local then LocalFunction else Function))
                             funcType prop)
 
-
-updateFuncDefProps :: Expr sym primtypes expr
-                   => Lambda sym primtypes primval expr
-                   -> FuncDef sym primtypes primval expr
-                   -> FuncDef sum primtypes primval expr
-updateFuncDefProps lam fd@FuncDef{..} =
-  fd { funcDefProps = updateFuncProps funcDefProps }
 
 
 
@@ -321,6 +317,51 @@ exprType expr = case exprUnwrap expr of
   ExprMkCont _ (Lambda _ bdy) _ -> exprType bdy
   ExprGCRoots _ bdy -> exprType bdy
   _ -> Left "exprType: bad"
+
+
+
+
+
+-- ---------------------------------------------------------------------------
+
+
+
+-- ---------------------------------------------------------------------------
+
+
+exprIsNop :: Expr Expression'' expr => expr -> Bool
+exprIsNop e = case exprUnwrap e of
+  ExprBaseOp Promote _ -> True
+  ExprBaseOp Demote _ -> True
+  _ -> False
+
+
+
+exprIsOmittable :: Expr Expression'' expr => expr -> Bool
+exprIsOmittable e = case uexpUnwrap e of
+  ExprBaseOp op _
+    | op == Promote || op == Demote || op == PeekVal || op == ReadRegister 
+        || op == NewRegister || op == GcPush -> True
+  ExprBaseOp (StoreNode _) _ -> True
+  ExprAlloc{} -> True
+  ExprReturn{} -> True
+  ExprPrim{..} -> primCheap expPrimitive
+  ExprCase{..} -> all exprIsOmmitable $ map lamExpr expAlts
+  ExprLet{..} -> exprIsOmittable expBody
+  ExprBind e1 (Lambda _ e2) -> exprIsOmittable e1 && exprIsOmittable e2
+  _ -> False
+
+
+
+exprIsErrOmittable :: Expr Expression'' expr => expr -> Bool
+exprIsErrOmittable e = case uexpUnwrap e of
+  ExprBaseOp op _
+    | op == Overwrite || op == PokeVal || op == WriteRegister -> True
+  ExprBind e1 (Lambda _ e2) -> exprIsEErrOmittable e1 && exprIsErrOmittable e2
+  ExprCase _ as -> all exprIsErrOmittable $ lamExpr as
+  _ -> exprIsOmittable e
+
+
 
 
 

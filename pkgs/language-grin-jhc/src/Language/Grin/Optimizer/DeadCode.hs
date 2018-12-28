@@ -4,8 +4,10 @@ module Language.Grin.Optimizer.DeadCode(
 
 import Data.Bool (bool)
 import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 import qualified Data.EnumSet.EnumSet as ESet
 
+import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
 import qualified Jhc.Logging as LOG
 import Jhc.Solvers.Fixer.Fixer
@@ -22,6 +24,10 @@ import Language.Grin.AST.Program
 
 -- ---------------------------------------------------------------------------
 
+logsrc :: LogSource -- for logging
+logsrc = "Language.Grin.Optimizer.DeadCode"
+
+
 removeDeadArgs :: Set.Set (Tag sym)
                -> Set.Set (Tag sym)
                -> Set.Set Var
@@ -31,7 +37,7 @@ removeDeadArgs :: Set.Set (Tag sym)
                -> m (WhizState, (Tag sym, Lambda))
 removeDeadArgs funSet directFuncs usedCafs usedArgs (a, l) whizState
     = whiz (\_ x -> x) (\(p, e) -> return (Just (p, f e))) (return . f) whizState (margs a l)
-        >>= \(l,ws) -> return (ws,(a,l))
+      >>= \(l,ws) -> return (ws,(a,l))
   where
     margs fn x@(Lambda as e) = bool x (Lambda (removeArgs fn as) e) $ Set.member a directFuncs
     --
@@ -88,14 +94,14 @@ deadCode roots grin = do
     pappFuncs <- newValue fixer bottom
     suspFuncs <- newValue fixer bottom
     -- set all roots as used
-    forM_ roots $ \r -> addRule $ ConstValue True `implies` sValue usedFuncs r
+    forM_ roots $ \r -> addRule $ sValue usedFuncs r `isSuperSetOf` ConstValue True
     let postInline = phaseEvalInlined (grinPhase grin)
 
     forM_ (grinCafs grin) $ \ (v,NodeC t []) -> do
-        (0,fn) <- tagUnfunction t
+        (0,fn) <- unfunction t
         v' <- supplyValue usedCafs v
-        addRule $ conditionalRule id v' $ (suspFuncs `isSuperSetOf` ConstValue (singleton fn))
-        addRule $ v' `implies` (sValue usedFuncs fn)
+        addRule $ conditionalRule id v' $ suspFuncs `isSuperSetOf` ConstValue (singleton fn)
+        addRule $ sValue usedFuncs fn `isSuperSetOf` v'
 
     mapM_ (go fixer pappFuncs suspFuncs usedFuncs usedArgs usedCafs postInline) (grinFuncs grin)
     findFixpoint Nothing {-"Dead Code"-} fixer
@@ -105,24 +111,34 @@ deadCode roots grin = do
     uf <- supplyReadValues usedFuncs
     pappFuncs <- readValue pappFuncs
     suspFuncs <- readValue suspFuncs
-    let cafSet = fg uc
+    let fg xs = fromList [ x | (x,True) <- xs ]
+        cafSet = fg uc
         funSet = fg uf
         argSet = fg ua
                  `union`
                  fromList [ (n,i) | FuncDef n (args :-> _) _ _ <- grinFunctions grin,
-                                        n `member` grinEntryPoints grin,
-                                        i <- [0 .. length args] ]
+                                    Map.member n $ grinEntryPoints grin,
+                                    i <- [0 .. length args] ]
         directFuncs =  funSet \\ suspFuncs \\ pappFuncs
-        fg xs = fromList [ x | (x,True) <- xs ]
-    newCafs <- flip mconcatMapM (grinCafs grin) $ \ (x,y) -> if x `member` cafSet then return [(x,y)] else tick stats "Optimize.dead-code.caf" >> return []
-    let f ((x,y):xs) rs ws = do
-            if not $ x `member` funSet then tick stats "Optimize.dead-code.func" >> f xs rs ws else do
-            (ws',r) <- runStatIO stats $ removeDeadArgs postInline funSet directFuncs cafSet argSet (x,y) ws
-            f xs (r:rs) ws'
-        f [] rs _ = return rs
-    newFuncs <- f (grinFuncs grin) [] whizState
-    --newFuncs <- flip mconcatMapM (grinFuncs grin) $ \ (x,y) -> do
-    let (TyEnv mp) = grinTypeEnv grin
+    newCafs <- let f !n rs ((xvar, xval):xs) =
+                     if Set.member xvar cafSet
+                        then f n (rs ++ [(xvar, xval)]) xs
+                        else f (n + 1) rs xs
+                   f !n rs [] = LOG.debug logsrc $ "remove cafs:" <+> int n
+                                  >> return rs
+                in f 0 [] $ grinCafs grin
+    --
+    newFUncs <- let f !n rs (FuncDef{..}:xs) ws =
+                      if Set.member funcDefName funSet
+                        then do
+                          (ws', r) <- removeDeadArgs postInline funSet directFuncs cafSet argSet (funcDefName, funcDefBody) ws
+                          f n xs (r:rs) ws'
+                        else f (n + 1) rs xs ws
+                    f !n rs [] _ = LOG.debugM logsrc $ "remove functions:" <+> int n
+                                     >> return rs
+                 in f (progFunctions grin) [] whizState
+    --
+    let (TypeEnv mp) = grinTypeEnv grin
     mp' <- flip mconcatMapM (toList mp) $ \ (x,tyty@TyTy { tySlots = ts }) -> case Just x  of
         Just _ | tagIsFunction x, not $ x `member` funSet -> return []
         Just fn | fn `member` directFuncs -> do
@@ -142,84 +158,84 @@ deadCode roots grin = do
 
 
 
-combineArgs :: a -> [b] -> [((a, Int), b)]
-combineArgs fn as = [ ((fn, n), a) | (n,a) <- zip [0 :: Int ..] as]
-
 
 
 go :: (MonadIO m, Collection b, Collection a, Fixable b, Fixable a,
-       Elem b ~ Atom, Elem a ~ Atom) =>
-      Fixer
-      -> Value a
-      -> Value b
-      -> Supply Tag Bool
-      -> Supply (Tag, Int) Bool
-      -> Supply Var Bool
-      -> Bool
-      -> (Tag, Lam)
-      -> m Lam
-go fixer pappFuncs suspFuncs usedFuncs usedArgs usedCafs postInline (fn,as :-> body) = ans where
+       Elem b ~ Atom, Elem a ~ Atom)
+   => Fixer
+   -> Value a
+   -> Value b
+   -> Supply (Tag sym) Bool
+   -> Supply (Tag sym, Int) Bool
+   -> Supply Var Bool
+   -> Bool
+   -> (Tag sym, Lambda)
+   -> m Lambda
+go fixer pappFuncs suspFuncs usedFuncs usedArgs usedCafs postInline (fn,as :-> body) = ans
+  where
     goAgain = go fixer pappFuncs suspFuncs usedFuncs usedArgs usedCafs postInline
     ans = do
         usedVars <- newSupply fixer
 
-        flip mapM_ (combineArgs fn as) $ \ (ap,Var v _) -> do
+        forM_ (combineArgs fn as) $ \ (ap,Var v _) -> do
             x <- supplyValue usedArgs ap
             v <- supplyValue usedVars v
-            addRule $ v `implies` x
+            addRule $ x `isSuperSetOf` v
         -- a lot of things are predicated on this so that CAFS are not held on to unnecesarily
         fn' <- supplyValue usedFuncs fn
         let varValue v | v < v0 = sValue usedCafs v
                        | otherwise = sValue usedVars v
             f e = g e >> return e
-            g (BaseOp Eval [e]) =  addRule (doNode e)
-            g (BaseOp Apply {} vs) =  addRule (mconcatMap doNode vs)
-            g (Case e _) =  addRule (doNode e)
-            g Prim { expArgs = as } = addRule (mconcatMap doNode as)
+            g (BaseOp Eval [e])     = addRule $ doNode e
+            g (BaseOp Apply {} vs)  = addRule $ mconcatMap doNode vs
+            g (Case e _)            = addRule $ doNode e
+            g Prim { expArgs = as } = addRule $ mconcatMap doNode as
             g (App a vs _) = do
                 addRule $ conditionalRule id fn' $ mconcat [ mconcatMap (implies (sValue usedArgs fn) . varValue) (freeVars a) | (fn,a) <- combineArgs a vs]
                 addRule $ fn' `implies` sValue usedFuncs a
                 addRule (mconcatMap doNode vs)
-            g (BaseOp Overwrite [Var v _,n]) | v < v0 = do
+            g (BaseOp Overwrite [Var v _,n]) | v < Val 0 = do
                 v' <- supplyValue usedCafs v
                 addRule $ conditionalRule id v' $ doNode n
-            g (BaseOp Overwrite [vv,n]) = addRule $ (doNode vv) `mappend` (doNode n)
-            g (BaseOp PokeVal [vv,n]) = addRule $ (doNode vv) `mappend` (doNode n)
-            g (BaseOp PeekVal [vv]) = addRule $ (doNode vv)
-            g (BaseOp Promote [vv]) = addRule $ (doNode vv)
-            g (BaseOp _ xs) = addRule $ mconcatMap doNode xs
-            g Alloc { expValue = v, expCount = c, expRegion = r } = addRule $ doNode v `mappend` doNode c `mappend` doNode r
-            g Let { expDefs = defs, expBody = body } = do
+            g (BaseOp Overwrite [vv,n]) = addRule $ doNode vv <> doNode n
+            g (BaseOp PokeVal [vv,n])   = addRule $ doNode vv <> doNode n
+            g (BaseOp PeekVal [vv])     = addRule $ doNode vv
+            g (BaseOp Promote [vv])     = addRule $ doNode vv
+            g (BaseOp _ xs)             = addRule $ mconcatMap doNode xs
+            g Alloc { expValue = v, expCount = c, expRegion = r }
+                                        = addRule $ doNode v <> doNode c <> doNode r
+            g Let { expDefs = defs, expBody = body } =
                 mapM_ goAgain [ (name,bod) | FuncDef { funcDefBody = bod, funcDefName = name } <- defs]
-                flip mapM_ (map funcDefName defs) $ \n -> do
-                    --n' <- supplyValue usedFuncs n
-                    --addRule $ fn' `implies` n'
-                    return ()
             g Error {} = return ()
-            -- TODO - handle function and case return values smartier.
-            g (Return ns) = mapM_ (addRule . doNode) ns
+            g (Return ns)               = mapM_ (addRule . doNode) ns -- TODO - handle function and case return values smartier.
             g x = error $ "deadcode.g: " ++ show x
+            --
             h' (p,e) = h (p,e) >> return (Just (p,e))
-            h (p,BaseOp (StoreNode _) [v]) = addRule $ mconcat $ [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
-            h (p,BaseOp Demote [v]) = addRule $ mconcat $ [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
-            h (p,Alloc { expValue = v, expCount = c, expRegion = r }) = addRule $ mconcat $ [ conditionalRule id  (varValue pv) (doNode v `mappend` doNode c `mappend` doNode r) | pv <- freeVars p]
+            --
+            h (p,BaseOp (StoreNode _) [v]) = addRule $ mconcat [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
+            h (p,BaseOp Demote [v]) = addRule $ mconcat [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
+            h (p,Alloc { expValue = v, expCount = c, expRegion = r }) = addRule $ mconcat [ conditionalRule id  (varValue pv) (doNode v <> doNode c <> doNode r) | pv <- freeVars p]
             h (p,Return vs) = mapM_ (h . \v -> (p,BaseOp Promote [v])) vs -- addRule $ mconcat $ [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
-            h (p,BaseOp Promote [v]) = addRule $ mconcat $ [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
+            h (p,BaseOp Promote [v]) = addRule $ mconcat [ conditionalRule id  (varValue pv) (doNode v) | pv <- freeVars p]
             h (p,e) = g e
-            doNode (NodeC n as) | not postInline, Just (x,fn) <- tagUnfunction n  = let
-                consts = (mconcatMap doNode as)
-                usedfn = implies fn' (sValue usedFuncs fn)
-                suspfn | x > 0 = conditionalRule id fn' (pappFuncs `isSuperSetOf` ConstValue (singleton fn))
-                       | otherwise = conditionalRule id fn' (suspFuncs `isSuperSetOf` ConstValue (singleton fn))
-                in mappend consts $ mconcat (usedfn:suspfn:[ mconcatMap (implies (sValue usedArgs fn) . varValue) (freeVars a) | (fn,a) <- combineArgs fn as])
+            --
+            doNode (NodeC n as) | not postInline, Just (x,fn) <- unfunction n
+              = let consts = mconcatMap doNode as
+                    usedfn = implies fn' $ sValue usedFuncs fn
+                    suspfn | x > 0 = conditionalRule id fn' (pappFuncs `isSuperSetOf` ConstValue (singleton fn))
+                           | otherwise = conditionalRule id fn' (suspFuncs `isSuperSetOf` ConstValue (singleton fn))
+                 in mappend consts $ mconcat (usedfn:suspfn:[ mconcatMap (implies (sValue usedArgs fn) . varValue) (freeVars a) | (fn,a) <- combineArgs fn as])
             doNode x = doConst x `mappend` mconcatMap (implies fn' . varValue) (freeVars x)
+            --
             doConst _ | postInline  = mempty
             doConst (Const n) = doNode n
-            doConst (NodeC n as) = mconcatMap doConst as
+            doConst (NodeC _ as) = mconcatMap doConst as
             doConst _ = mempty
 
-        (nl,_) <- whiz (\_ -> id) h' f whizState (as :-> body)
-        return nl
+        fst <$> whiz (const id) h' f whizState (as :-> body)
+    combineArgs :: a -> [b] -> [((a, Int), b)]
+    combineArgs fn as = [ ((fn, n), a) | (n,a) <- zip [0 :: Int ..] as]
+
 
 
 -- vim: ts=8 sw=2 expandtab :

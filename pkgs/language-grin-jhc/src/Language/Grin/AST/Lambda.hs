@@ -18,6 +18,7 @@ data Lambda sym primtypes primval expr
     lamBind :: ![Val sym primtypes primval],
     lamExpr :: ! expr }
 
+type ExpLambda exp = Lambda (ExpSym exp) (ExpPrimTypes exp) (ExpPrimVal exp) exp
 
 -- ---------------------------------------------------------------------------
 
@@ -43,6 +44,7 @@ lamFreeVars Lambda{..} = ESet.intersection (exprFreeVars lamExr) (mconcat $ map 
 
 lamFreeTagVars :: Lambda sym primtypes primval expr -> ESet.EnumSet (Tag sym)
 lamFreeTagVars (Lambda vs e) = ESet.intersection (exprFreeTagVars e) (valFreeTagVars' vs)
+
 
 
 -- vim: ts=8 sw=2 expandtab :

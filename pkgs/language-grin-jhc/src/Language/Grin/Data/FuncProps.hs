@@ -17,7 +17,7 @@ import Language.Grin.Internal.Classes
 
 data FuncProps sym primtypes = FuncProps {
   funcInfo :: !Info.Info,
-  funcFeeVars :: !ESet.EnumSet Var
+  funcFeeVars :: !ESet.EnumSet Var,
   funcTags :: !Set.Set (Tag sym),
   funcType :: !([Typ primtypes], [Typ primtypes]),
   funcCuts :: Perhaps,
@@ -34,11 +34,11 @@ data FuncProps sym primtypes = FuncProps {
 newFuncProps :: Expr sym primtypes expr
                 => Lambda sym primtypes expr
                 -> FuncProps sym primtypes
-newFuncProps lam@Lambda{..} = FuncProps {
+newFuncProps Lambda{..} = FuncProps {
     funcInfo = mempty,
     funcFeeVars = fv,
     funcTags = ft,
-    funcType = lamType lam,
+    funcType = lamType,
     funcCuts = Maybe,
     funcAllocs = Maybe,
     funcCreates = Maybe,
@@ -51,10 +51,10 @@ newFuncProps lam@Lambda{..} = FuncProps {
 updateFuncProps :: Expr sym primtypes expr
                 => Lambda sym primtypes expr
                 -> FuncProps sym primtypes -> FuncProps sym primtypes
-updateFuncProps lam@Lambda{..} fp@FuncProps{..} =
+updateFuncProps Lambda{..} fp@FuncProps{..} =
   fp { funcFeeVars = fv,
        funcTags = ft,
-       funcType = lamType lam }
+       funcType = lamType }
   where (fv, ft) = exprFreeVars lamExp
 
 

@@ -1,4 +1,4 @@
-module Grin.Devolve(twiddleGrin,devolveTransform) where
+module Language.Grin.Optimizer.Devolve(twiddleGrin,devolveTransform) where
 
 import Control.Monad.Identity
 import Control.Monad.RWS

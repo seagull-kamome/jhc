@@ -1,4 +1,4 @@
-module Grin.Unboxing(unboxReturnValues) where
+module Language.Grin.Optimizer.Unboxing(unboxReturnValues) where
 
 import Maybe
 import Monad
