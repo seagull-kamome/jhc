@@ -46,6 +46,33 @@ valTransform_ f = \case
 
 
 
+-- ---------------------------------------------------------------------------
+
+
+newFuncProps :: Lambda sym primtypes expr -> FuncProps sym primtypes
+newFuncProps Lambda{..} = FuncProps {
+  --funcInfo = mempty,
+  funcFeeVars = fv,
+  funcTags = ft,
+  funcType = lamType,
+  funcCuts = Maybe,
+  funcAllocs = Maybe,
+  funcCreates = Maybe,
+  funcLoops = Maybe }
+  where (fv, ft) = exprFreeVars lamExp
+
+
+
+updateFuncProps :: Expr sym primtypes expr
+                => Lambda sym primtypes expr
+                -> FuncProps sym primtypes -> FuncProps sym primtypes
+updateFuncProps Lambda{..} fp@FuncProps{..} =
+  fp { funcFeeVars = fv,
+       funcTags = ft,
+       funcType = lamType }
+  where (fv, ft) = exprFreeVars lamExp
+
+
 
 
 -- ---------------------------------------------------------------------------
@@ -54,15 +81,15 @@ valTransform_ f = \case
 
 
 lamTransformPatterns :: Monad m
-                     => ([Val sym primtypes primval] -> m [Val sym primtypes primval])
-                     -> Lambda sym primtypes primval expr
-                     -> m (Lambda sym primtypes primval)
+                     => ([Val a b c] -> m [Val d e f])
+                     -> Lambda a b c expr
+                     -> m (Lambda d e f expr)
 lambdaTransformPatterns f Lambda{..} = Lambda <$> f lamBind <*> pure lamExpr
 
 
 
 lamTransformBody :: Monad m
-                 => (expr -> m expr) -> Lambda a b c expr -> Lambda a b c expr
+                 => (expr -> m expr') -> Lambda a b c expr -> Lambda a b c expr'
 lamTransformBody f Lambda{..} = Lambda lamBind <$> f lamExpr
 
 

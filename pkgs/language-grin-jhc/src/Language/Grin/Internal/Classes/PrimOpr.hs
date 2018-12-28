@@ -1,4 +1,5 @@
 module Language.Grin.Internal.Classes.PrimOpr (
+  PrimOpr(..)
   ) where
 
 

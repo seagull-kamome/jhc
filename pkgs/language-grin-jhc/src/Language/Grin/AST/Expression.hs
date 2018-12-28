@@ -320,9 +320,28 @@ exprType expr = case exprUnwrap expr of
 
 
 
-
-
 -- ---------------------------------------------------------------------------
+
+
+lamType :: Expr expr'' expr
+        => Lambda sym primtypes primval expr
+        -> Either T.Text ([Typ primtypes], [Typ primtypes])
+lamType Lambda{..} =
+  case (mapM valType lamBind, exprType lamExpr) of
+    (Left x, _) -> Left x
+    (_, Left x) -> Left x
+    (Right x, Right y) -> Right (x, y)
+
+
+
+lamFreeVars :: Lambda sym primtypes primval expr -> ESet.EnumSet Var
+lamFreeVars Lambda{..} = ESet.intersection (exprFreeVars lamExr) (mconcat $ map valFreeVars lamBind)
+
+
+
+lamFreeTagVars :: Lambda sym primtypes primval expr -> ESet.EnumSet (Tag sym)
+lamFreeTagVars (Lambda vs e) = ESet.intersection (exprFreeTagVars e) (valFreeTagVars' vs)
+
 
 
 

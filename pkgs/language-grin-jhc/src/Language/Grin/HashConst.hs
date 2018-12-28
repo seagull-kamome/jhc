@@ -1,16 +1,20 @@
-module Grin.HashConst(newConst,HcHash(),HcNode(..),toList,emptyHcHash) where
+module Language.Grin.HashConst(newConst,HcHash(),HcNode(..),toList,emptyHcHash) where
 
 import Control.Monad.State
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-import Grin.Grin
-import StringTable.Atom
-import Util.Graph
+import Language.Grin.Tag
+import Language.Grin.Var
+import Language.Grin.Val
+
+
+-- ---------------------------------------------------------------------------
+
 
 -- TODO tuples
 
-data HcNode = HcNode {-# UNPACK #-} !Atom [Either Val Int]
+data HcNode = HcNode !(Tag sym) [Either (Val sym primtypes primval) Int]
     deriving(Show,Ord,Eq)
 
 data HcHash = HcHash !Int (Map.Map HcNode Int)
@@ -18,30 +22,29 @@ data HcHash = HcHash !Int (Map.Map HcNode Int)
 
 emptyHcHash = HcHash 1 Map.empty
 
-newConst :: MonadState HcHash m => Set.Set Atom -> Val -> m (Bool,Int)
-newConst cpr n = f n where
-    f (NodeC t vs) = do
-        let g (Lit i ty)
-                | otherwise = return $ Left (Lit i ty)
-            g vp@(ValPrim _ _ ty)
-                | otherwise = return $ Left vp
-            g x@(Var (V n) _) | n < 0  = return $ Left x
-            g n@(Const (NodeC _ [])) = return $ Left n
-            g n@(NodeC _ []) = return $ Left n
-            g n@(Const (NodeC a _)) | a `Set.member` cpr = return $ Left n
-            g n@(NodeC a _) | a `Set.member` cpr  = return $ Left n
-            g (Const n) = liftM (Right . snd) $ f n
-            g n@NodeC {} = liftM (Right . snd) $ f n
-            g e = error $ "HashConst.g: " ++ show e
-        vs' <- mapM g vs
-        let n = HcNode t vs'
+newConst :: MonadState HcHash m
+         => Set.Set (Tag sym) -> Val sym primtypes primval -> m (Bool,Int)
+newConst cpr = f where
+    f (ValNodeC t vs) = do
+        vs' <- forM vs $ \v -> case v of
+          ValLit{}  -> return $ Left v
+          ValPrim{} -> return $ Left v
+          ValVar (Var n) _ | n < 0  -> return $ Left v
+          ValConst (ValNodeC _ []) -> return $ Left v
+          ValConst (ValNodeC a _) | a `Set.member` cpr -> return $ Left v
+          ValConst n -> (Right . snd) <$> f n
+          ValNodeC _ [] -> return $ Left v
+          ValNodeC a _ | a `Set.member` cpr  -> return $ Left v
+          ValNodeC{} -> (Right . snd) <$> f v
+          e -> error $ "HashConst.g: " ++ show e
+        let n' = HcNode t vs'
         HcHash c h <- get
-        case Map.lookup n h of
-            Just n -> return (True,n)
-            Nothing -> do
-                let h' = Map.insert n c h
-                put $ HcHash (c + 1) h'
-                return (False,c)
+        case Map.lookup n' h of
+          Just n'' -> return (True,n'')
+          Nothing -> do
+            let h' = Map.insert n' c h
+            put $ HcHash (c + 1) h'
+            return (False,c)
     f _ = error "HashConst.newConst'"
 
 toList :: HcHash -> [(HcNode,Int)]

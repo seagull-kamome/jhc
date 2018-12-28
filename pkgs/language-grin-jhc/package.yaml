@@ -34,7 +34,9 @@ library:
     - PartialTypeSignatures
   dependencies:
     - base >= 4.7 && < 5
+    - text
     - containers
+    - containers-missing
     - ansi-wl-pprint
     - jhc-logger
     - jhc-solvers == 0.8.2.0

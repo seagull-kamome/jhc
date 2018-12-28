@@ -7,7 +7,6 @@ module Language.Grin.AST.Val (
 
 import qualified Data.Text as T
 import qualified Data.EnumSet.EnumSet as ESet
-import Data.Mono.Traversable
 
 import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
@@ -29,7 +28,6 @@ data Val sym primtypes primval
   | ValItem !sym !(Typ primtypes)
   | ValUnknown !(Typ primtypes)
   deriving (Eq, Ord)
-type ExpVal exp = Val (ExprSym exp) (ExpPrimTypes exp) (ExpPrimVal exp)
 
 
 instance (Pretty (Tag sym), Pretty sym, Pretty (Typ primtypes),
@@ -98,10 +96,10 @@ valType (ValUnknown t) = pure t
 valFreeVars :: Enum (Tag sym) => [Val sym primtypes primval] -> ESet.EnumSet Var
 valFreeVars = ESet.unions . map (\case
   ValNodeC _ xs -> valFreeVars xs
-  ValConst v -> valFreeVars [v]
-  ValIndex x y -> valFreeVars [x, y]
-  ValVar v _ -> ESet.singleton v
-  _ -> ESet.empty )
+  ValConst v    -> valFreeVars [v]
+  ValIndex x y  -> valFreeVars [x, y]
+  ValVar v _    -> ESet.singleton v
+  _ -> ESet.empty)
 
 
 
@@ -117,10 +115,10 @@ valFreeTagVars = ESet.unions . map (\case
 valIsConstant :: Val sym primtype primval -> Bool
 valIsConstant = \case
   ValNodeC _ xs -> all valIsConstant xs
-  Lit{}   -> True
-  Const{} -> True
-  Var (Var v) _ | v < 0 -> True
-  Index v t -> valIsConstant v && valIsConstant t
+  ValLit{}   -> True
+  ValConst{} -> True
+  ValVar (Var v) _ -> v < 0
+  ValIndex v t -> valIsConstant v && valIsConstant t
   ValPrim{} -> True
   _ -> False
 
