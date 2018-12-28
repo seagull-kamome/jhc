@@ -1,6 +1,8 @@
 module Language.Grin.Transform(
   whiz, fizz, WhizState, whizState, normalizeGrin,normalizeGrin', applySubstE, applySubst, whizExps,
   --
+  valTransform, valTransform_,
+  --
   lamTransformPatterns, lamTransformBody,
   --
   funcdefTransformLam,
@@ -17,6 +19,32 @@ import Language.Grin.AST.Var
 import Language.Grin.AST.Lambda
 import Language.Grin.AST.Expression
 import Language.Grin.Internal.Classes
+
+
+
+-- ---------------------------------------------------------------------------
+-- Transform Value
+
+valTransform :: Monad m
+           => (Val a b c -> m (Val d e f)) -> Val a b c -> m (Val d e f)
+valTransform f = \case
+  ValNodeC t vs -> ValNodeC t <$> mapM f vs
+  ValIndex a b  -> ValIndex <$>  f a <*> f b
+  ValConst v    -> ValConst <$> f v
+  ValValPrim p vs ty -> ValPrim p <$> mapM f vs <*> pure ty
+  x -> pure x
+
+
+
+valTransform_ :: Monad m => (Val a b c -> m a) -> Val a b c -> m ()
+valTransform_ f = \case
+  ValNodeC t vs -> mapM_ f vs
+  ValIndex a b  -> f a >> f b >> pure ()
+  ValConst v    -> f v >> pure ()
+  ValValPrim p vs ty ->  mapM_ f vs
+  _ -> pure ()
+
+
 
 
 

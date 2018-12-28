@@ -126,26 +126,6 @@ valIsConstant = \case
 
 
 
-valTransformM :: Monad m
-           => (Val a b c -> m (Val d e f)) -> Val a b c -> m (Val d e f)
-valTransformM f = \case
-  ValNodeC t vs -> ValNodeC t <$> mapM f vs
-  ValIndex a b  -> ValIndex <$>  f a <*> f b
-  ValConst v    -> ValConst <$> f v
-  ValValPrim p vs ty -> ValPrim p <$> mapM f vs <*> pure ty
-  x -> pure x
-
-
-
-valTransformM_ :: Monad m => (Val a b c -> m a) -> Val a b c -> m ()
-valTransformM_ f = \case
-  ValNodeC t vs -> mapM_ f vs
-  ValIndex a b  -> f a >> f b >> pure ()
-  ValConst v    -> f v >> pure ()
-  ValValPrim p vs ty ->  mapM_ f vs
-  _ -> pure ()
-
-
 
 -- ---------------------------------------------------------------------------
 --
