@@ -3,27 +3,27 @@ module Language.Grin.AST.Program (
   ) where
 
 
-import qualified Data.Text as T
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
+import Language.Grin.AST.Var
 import Language.Grin.AST.Val
-import Language.Grin.AST.Type
 import Language.Grin.AST.Expression
+import Language.Grin.Data.TypeEnv
+import Language.Grin.Data.FFIExport
 
 
 
 -- ---------------------------------------------------------------------------
 
-data OpitimizingPhase
+data OptimizingPhase
   = OPhaseInit | OPhasePostInlineEval | OPhaseAeOptimize | OPhasePostDevolve
   deriving (Show, Eq, Ord, Enum)
 
 
-
 data Program sym primtypes primopr primval
   = Program {
-    progEntryPoints :: !(Map.Map sym FFIExport),
+    progEntryPoints :: !(Map.Map sym (FFIExport sym)),
     progOptimizingPhase :: !OptimizingPhase,
     progTypeEnv :: !(TypeEnv sym primtypes),
     progFunctions :: ![FuncDef sym primtypes primval (Expression sym primtypes primopr primval)],
@@ -37,7 +37,7 @@ data Program sym primtypes primopr primval
 -- ---------------------------------------------------------------------------
 -- Construction
 
-emptyProgram :: Program sym primtypes primopr primval
+emptyProgram :: Ord sym => Program sym primtypes primopr primval
 emptyProgram = Program mempty OPhaseInit mempty mempty mempty mempty mempty
 
 
