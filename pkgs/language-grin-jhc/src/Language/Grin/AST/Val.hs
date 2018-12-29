@@ -26,7 +26,7 @@ data Val sym primtypes primval
   | ValUnit
   | ValPrim !primval ![Val sym primtypes primval] !(Typ primtypes)
   | ValIndex !(Val sym primtypes primval) !(Val sym primtypes primval)
-  | ValItem !sym !(Typ primtypes)
+  | ValItem !(Tag sym) !(Typ primtypes)
   | ValUnknown !(Typ primtypes)
   deriving (Eq, Ord)
 

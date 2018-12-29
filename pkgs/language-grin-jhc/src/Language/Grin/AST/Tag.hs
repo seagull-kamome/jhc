@@ -1,7 +1,7 @@
 module Language.Grin.AST.Tag (
   TagType(..), Tag''(..), Tag(..),
   isSuspFunction, isFunction, isPartialAp, isTag, isWHNF,
-  toPartial, toFunction, tagUnfunction, flipFunction
+  tagToPartial, tagToFunction, tagUnfunction, flipFunction
   ) where
 
 import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
@@ -19,6 +19,7 @@ data Tag'' (tagtyp :: TagType) sym where
   TagFunc {- f -} :: !sym -> Tag'' 'Tag'f sym
   TagPApp {- P -} :: !(Tag'' 'Tag'f sym) -> !Word {- /=0 -} -> Tag'' 'Tag'P sym
   TagSusp {- F -} :: !(Tag'' 'Tag'f sym) -> !Bool -> Tag'' 'Tag'F sym
+  TagBApply {- bapply_nnnn -} :: !Word -> Tag'' 'Tag'b sym
   TagFunc' {- b -} :: !sym -> Tag'' 'Tag'b sym
   TagSusp' {- B -} :: !(Tag'' 'Tag'b sym) -> !Bool -> Tag'' 'Tag'B sym
   TagTypeCons {- T -} :: !sym -> Tag'' 'Tag'T sym
@@ -35,8 +36,10 @@ instance Pretty sym => Pretty (Tag'' tagtyp sym) where
   pretty (TagFunc x)     = "f" <> pretty x
   pretty (TagPApp (TagFunc x) n)   = "P" <> text (show n) <> "_" <> pretty x
   pretty (TagSusp (TagFunc x) _)   = "F" <> pretty x
+  pretty (TagBApply x)    = "bapply_" <> pretty (show x)
   pretty (TagFunc' x)    = "b" <> pretty x
   pretty (TagSusp' (TagFunc' x) _)  = "B" <> pretty x
+  pretty (TagSusp' (TagBApply x) _)  = "Bapply" <> text (show x)
   pretty (TagTypeCons x) = "T" <> pretty x
   pretty (TagTypePApp (TagTypeCons x) _) = "V" <> pretty x
 
@@ -56,6 +59,7 @@ compareTag lhs rhs = case compare (conid lhs) (conid rhs) of
     (TagSusp t1 b1, TagSusp t2 b2) -> case compareTag t1 t2 of
       EQ -> compare b1 b2
       x -> x
+    (TagBApply x1, TagBApply x2) -> compare x1 x2
     (TagFunc' s1, TagFunc' s2) -> compare s1 s2
     (TagSusp' t1 b1, TagSusp' t2 b2) -> case compareTag t1 t2 of
       EQ -> compare b1 b2
@@ -73,10 +77,11 @@ compareTag lhs rhs = case compare (conid lhs) (conid rhs) of
     conid (TagFunc _) = 2
     conid (TagPApp _ _) = 3
     conid (TagSusp _ _) = 4
-    conid (TagFunc' _) = 5
-    conid (TagSusp' _ _) = 6
-    conid (TagTypeCons _) = 7
-    conid (TagTypePApp _ _) = 8
+    conid (TagBApply _) = 5
+    conid (TagFunc' _) = 6
+    conid (TagSusp' _ _) = 7
+    conid (TagTypeCons _) = 8
+    conid (TagTypePApp _ _) = 9
 
 
 
@@ -135,17 +140,18 @@ isWHNF _ = False
 -- Convert
 
 
-toPartial :: forall sym. Tag sym -> Word -> Maybe (Tag sym)
-toPartial (Tag (x@TagFunc{})) 0 = Just $ Tag $ TagSusp x True
-toPartial (Tag (x@TagFunc{})) n = Just $ Tag $ TagPApp x n
-toPartial x@(Tag TagTypeCons{}) 0 = Just x
-toPartial (Tag (x@TagTypeCons{})) n = Just $ Tag $ TagTypePApp x n
-toPartial (Tag (x@TagFunc'{})) 0 = Just $ Tag $ TagSusp' x True
-toPartial _ _ = Nothing
+tagToPartial :: forall sym. Tag sym -> Word -> Maybe (Tag sym)
+tagToPartial (Tag (x@TagFunc{})) 0 = Just $ Tag $ TagSusp x True
+tagToPartial (Tag (x@TagFunc{})) n = Just $ Tag $ TagPApp x n
+tagToPartial x@(Tag TagTypeCons{}) 0 = Just x
+tagToPartial (Tag (x@TagTypeCons{})) n = Just $ Tag $ TagTypePApp x n
+tagToPartial (Tag (x@TagFunc'{})) 0 = Just $ Tag $ TagSusp' x True
+tagToPartial (Tag (x@TagBApply{})) 0 = Just $ Tag $ TagSusp' x True
+tagToPartial _ _ = Nothing
 
 
-toFunction :: Tag sym -> Maybe (Tag sym)
-toFunction x = snd <$> tagUnfunction x
+tagToFunction :: Tag sym -> Maybe (Tag sym)
+tagToFunction x = snd <$> tagUnfunction x
 
 
 tagUnfunction :: Tag sym -> Maybe (Word, Tag sym)

@@ -42,5 +42,6 @@ library:
     - ansi-wl-pprint
     - jhc-logger
     - jhc-solvers == 0.8.2.0
+    - monad-memo
 
 

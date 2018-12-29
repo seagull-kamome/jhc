@@ -35,7 +35,7 @@ import qualified Language.Grin.Internal.Highlighter as H
 -- ---------------------------------------------------------------------------
 
 data FuncDef sym primtypes primval expr = FuncDef {
-    funcDefName :: !sym,
+    funcDefName :: !(Tag sym),
     funcDefBody :: !(Lambda expr),
     funcDefCall :: !(Val sym primtypes primval),
     funcDefProps :: !(FuncProps sym (Typ primtypes))
