@@ -76,6 +76,25 @@ updateFuncProps Lambda{..} fp@FuncProps{..} =
 
 
 -- ---------------------------------------------------------------------------
+
+
+newFuncDef :: Bool -> sym -> Lambda expr
+           -> FuncDef sym primtypes primval expr
+newFuncDef local name lam = FuncDef {
+    funcDefName = name,
+    funcDefBody = lam,
+    funcDefCall = call,
+    funcDefProps = newFuncProps lam }
+  where
+    props = newFunctopnProps lam
+    call = ValItem name
+                   (uncurry (TyCall (if local then LocalFunction else Function))
+                            funcType prop)
+
+
+
+
+-- ---------------------------------------------------------------------------
 -- Transform Lambda
 
 

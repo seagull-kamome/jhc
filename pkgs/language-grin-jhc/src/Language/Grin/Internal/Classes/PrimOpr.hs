@@ -14,6 +14,7 @@ class PrimOpr primopr where
                 => primopr
                 -> [Val sym primtypes primval]
                 -> [Typ primtypes] -> Doc
+  primCheap :: primopr -> Bool
 
 
 -- vim: ts=8 sw=2 expandtab :

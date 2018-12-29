@@ -1,5 +1,5 @@
 module Language.Grin.AST.Type (
-  Callable, Typ(..), TypeThunk(..),
+  Callable(..), Typ(..), TypeThunk(..),
   --
   TypeOfType(..), emptyTypeOfType
   ) where

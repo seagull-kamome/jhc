@@ -14,13 +14,13 @@ import Language.Grin.Data.Perhaps
 
 data FuncProps sym primtypes = FuncProps {
   --funcInfo    :: !Info.Info,
-  funcFeeVars :: !(ESet.EnumSet Var),
-  funcTags    :: !(Set.Set (Tag sym)),
-  funcType    :: !([Typ primtypes], [Typ primtypes]),
-  funcCuts    :: !Perhaps,
-  funcAllocs  :: !Perhaps,
-  funcCreates :: !Perhaps,
-  funcLoops   :: !Perhaps
+  funcFreeVars :: !(ESet.EnumSet Var),
+  funcTags     :: !(Set.Set (Tag sym)),
+  funcType     :: !([Typ primtypes], [Typ primtypes]),
+  funcCuts     :: !Perhaps,
+  funcAllocs   :: !Perhaps,
+  funcCreates  :: !Perhaps,
+  funcLoops    :: !Perhaps
   }
   -- deriving (Show, Eq, Ord)
 

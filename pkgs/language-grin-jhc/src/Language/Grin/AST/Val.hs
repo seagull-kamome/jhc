@@ -7,6 +7,7 @@ module Language.Grin.AST.Val (
 
 import qualified Data.Text as T
 import qualified Data.EnumSet.EnumSet as ESet
+import qualified Data.Set as Set
 
 import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
@@ -93,7 +94,7 @@ valType (ValUnknown t) = pure t
 
 
 
-valFreeVars :: Enum (Tag sym) => [Val sym primtypes primval] -> ESet.EnumSet Var
+valFreeVars :: [Val sym primtypes primval] -> ESet.EnumSet Var
 valFreeVars = ESet.unions . map (\case
   ValNodeC _ xs -> valFreeVars xs
   ValConst v    -> valFreeVars [v]
@@ -103,12 +104,12 @@ valFreeVars = ESet.unions . map (\case
 
 
 
-valFreeTagVars :: Enum (Tag sym) => [Val sym primtypes primval] -> ESet.EnumSet (Tag sym)
-valFreeTagVars = ESet.unions . map (\case
-  ValNodeC t xs -> ESet.insert t $ valFreeTagVars xs
+valFreeTagVars :: Ord (Tag sym) => [Val sym primtypes primval] -> Set.Set (Tag sym)
+valFreeTagVars = Set.unions . map (\case
+  ValNodeC t xs -> Set.insert t $ valFreeTagVars xs
   ValConst v -> valFreeTagVars [v]
   ValIndex x y -> valFreeTagVars [x, y]
-  _ -> ESet.empty )
+  _ -> Set.empty )
 
 
 
