@@ -42,13 +42,16 @@ module Jhc.Logging (
   sendLog', sendLog,
   --
   logDebug, logInfo, logNotice, logWarn, logError, logFatal,
+  logErrorFail, logFatalFail,
   --
   MonadLogging(..),
-  logDebugM, logInfoM, logNoticeM, logWarnM, logErrorM, logFatalM
+  logDebugM, logInfoM, logNoticeM, logWarnM, logErrorM, logFatalM,
+  logErrorFailM, logFatalFailM
   ) where
 
 import qualified Data.Text as T
 import Control.Monad (when)
+import Control.Monad.Fail (MonadFail(fail))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader.Class (MonadReader(..))
 import System.IO (Handle, stderr)
@@ -57,6 +60,8 @@ import System.Exit (exitWith, ExitCode, die)
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
+
+import Prelude hiding(fail)
 
 -- ---------------------------------------------------------------------------
 
@@ -230,6 +235,16 @@ logFatal s = sendLog s LevelFatal
 {-# INLINE logFatal #-}
 
 
+
+logErrorFail, logFatalFail
+  :: (MonadIO m, MonadFail m, MonadReader env m, HasLogFunc env) => LogSource -> Doc -> m ()
+logErrorFail x y = logError x y >> fail (T.unpack x)
+{-# INLINE logErrorFail #-}
+logFatalFail x y = logFatal x y >> fail (T.unpack x)
+{-# INLINE logFatalFail #-}
+
+
+
 -- ---------------------------------------------------------------------------
 
 logDebugM, logInfoM, logNoticeM, logWarnM, logErrorM, logFatalM
@@ -246,6 +261,16 @@ logErrorM s m = getLogFuncM >>= liftIO . sendLog' s LevelError m
 {-# INLINE logErrorM #-}
 logFatalM s m = getLogFuncM >>= liftIO . sendLog' s LevelFatal m
 {-# INLINE logFatalM #-}
+
+
+logErrorFailM, logFatalFailM
+  :: (MonadIO m, MonadFail m, MonadLogging m) => LogSource -> Doc -> m ()
+logErrorFailM s m = getLogFuncM >>= liftIO . sendLog' s LevelError m
+                    >> fail (T.unpack s)
+{-# INLINE logErrorFailM #-}
+logFatalFailM s m = getLogFuncM >>= liftIO . sendLog' s LevelFatal m
+                    >> fail (T.unpack s)
+{-# INLINE logFatalFailM #-}
 
 
 
