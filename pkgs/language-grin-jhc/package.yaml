@@ -37,6 +37,7 @@ library:
   dependencies:
     - base >= 4.7 && < 5
     - text
+    - mtl
     - containers
     - containers-missing
     - ansi-wl-pprint

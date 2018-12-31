@@ -1,118 +1,267 @@
-module Grin.Lint(
-    lintCheckGrin,
-    typecheckGrin,
-    transformGrin,
-    dumpGrin
+module Language.Grin.Lint(
+  progTypecheck, dumpProgram
     ) where
 
-import Control.Exception
+import qualified Data.Text as T
+--import Control.Monad.Fail
 import Control.Monad.Reader
-import Data.Monoid
-import System.IO
-import qualified Data.Set as Set
+import Control.Exception
+import System.Environment
+import System.IO (Handle, IOMode(WriteMode), openFile, hClose)
 
-import Doc.DocLike
-import Grin.Grin
-import Grin.Show
-import Options
-import Support.CanType
-import Support.Compat
-import Support.FreeVars
-import Support.Transform
-import Text.Printf
-import Util.Gen
-import Util.SetLike
-import qualified FlagDump as FD
-import qualified Stats
+import qualified Data.EnumSet.EnumSmallBitSet as EBSet -- containers-missing
+import qualified Data.EnumSet.EnumSet as ESet          -- containers-missing
 
-lintCheckGrin grin = when flint $ typecheckGrin grin
+import Jhc.Logging
 
-lintCheckGrin' onerr grin | flint = do
-    let env = TcEnv { envTyEnv = grinTypeEnv grin, envInScope = fromList (fsts $ grinCafs grin) }
-    let errs = [  (err ++ "\n" ++ render (prettyFun a) ) | (a,Left err) <-  [ (a,runTc env (tcLam Nothing c))  | a@(_,c) <-  grinFuncs grin ]]
-    if null errs then return () else do
-    onerr
-    putErrLn ">>> Type Errors"
-    mapM_ putErrLn  errs
-    unless (null errs || optKeepGoing options) $ fail "There were type errors!"
-lintCheckGrin' _ _ = return ()
+import Language.Grin.AST.Program
+import Language.Grin.AST.BasicOperation
+import Language.Grin.AST.Lambda
+import Language.Grin.AST.Var
+import Language.Grin.AST.Val
+import Language.Grin.AST.Tag
+import Language.Grin.AST.Type
+import Language.Grin.AST.Expression
+import Language.Grin.Internal.Classes
+import Language.Grin.Data.TypeEnv
+import Language.Grin.Data.Config
 
-typecheckGrin grin = do
-    let env = TcEnv { envTyEnv = grinTypeEnv grin, envInScope = fromList (fsts $ grinCafs grin) }
-    let errs = [  (err ++ "\n" ++ render (prettyFun a) ) | (a,Left err) <-  [ (a,runTc env (tcLam Nothing c))  | a@(_,c) <-  grinFuncs grin ]]
-    mapM_ putErrLn  errs
-    unless (null errs || optKeepGoing options) $ fail "There were type errors!"
+import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
 
-{-# NOINLINE dumpGrin #-}
-dumpGrin pname grin = do
-    (argstring,sversion) <- getArgString
+-- ---------------------------------------------------------------------------
 
-    let fn ext action = do
-            let oname = outputName ++ "_" ++ pname ++ "." ++ ext
-            putErrLn $ "Writing: " ++ oname
-            h <- openFile oname WriteMode
-            action h
-            hClose h
-    fn "grin" $ \h -> do
-        hPutStrLn h $ unlines [ "-- " ++ argstring,"-- " ++ sversion,""]
-        hPrintGrin h grin
-    wdump FD.GrinDatalog $ fn "datalog" $ \h -> do
-        hPutStrLn h $ unlines [ "% " ++ argstring,"% " ++ sversion,""]
-        hPrintGrinDL h grin
-    wdump FD.Grin $ do
-        putErrLn $ "v-- " ++ pname ++ " Grin"
-        printGrin grin
-        putErrLn $ "^-- " ++ pname ++ " Grin"
 
-class DShow a where
-    dshow :: a -> String
+progTypecheck :: (Monad m, MonadIO m, MonadReader env m, HasLogFunc env,
+                 HasGrinConfig env)
+              => Program -> m ()
+progTypecheck Program{..} = do
+  env <- asks grinConfig
+  when (EBSet.member CfgLitCheck $ cfgSwitches $ grinConfig env) $ do
+    b <- lefts <$> runReader (map (runExceptT lamTypecheck') $ funcDefBody progFunctions)
+                             TcEnv {
+                               envTyEnv = progTypeEnv,
+                               envInScope = fromList $ map fst progCafs,
+                               envGrinConfig = grinConfig env,
+                               envLogFunc = getLogFunc env }
+    unless (null b || EBSet.member CfgKeepGoing (cfgSwitches $ grinConfig env))
+      fail "There are type errors."
 
-instance DShow String where
-    dshow s = '\'':f s where
-        f ('\'':rs) = "''" ++ f rs
-        f (x:xs) = x:f xs
-        f [] = "'"
 
-instance DShow Tag where
-    dshow s = '\'':f (show s) where
-        f ('\'':rs) = "''" ++ f rs
-        f (x:xs) = x:f xs
-        f [] = "'"
 
-instance DShow Var where
-    dshow v = dshow (show v)
 
-instance DShow Ty where
-    dshow v = dshow $ show v
+-- ---------------------------------------------------------------------------
+-- Typechecker
 
-instance (DShow a,DShow b) => DShow (Either a b) where
-    dshow (Left x) = dshow x
-    dshow (Right x) = dshow x
+logsrc :: T.Text
+logsrc = "Grin.Link"
+
+data TcEnv sym primtypes = TcEnv {
+    envTyEnv       :: TypeEnv sym primtypes,
+    envInScope     :: ESet.EnumSet Var,
+    envGrinConfig  :: GrinConfig,
+    envLogFunc :: LogFunc
+}
+instance HasGrinConfig TcEnv where grinConfig = envGrinConfig
+
+
+
+
+
+lamTypecheck :: (Monad m, MonadIO m, MonadReader TcEnv m,
+                 primtypes ~ ExprPrimTypes expr)
+             => [Typ primtypes] -> Lambda expr -> m [Typ primtypes]
+lamTypecheck ty lam@Lambda{..} =
+  local (\e -> e { envInScope = valFreeVars lamBind <> envInScope e }) $
+    mapM tcVal v
+      >>= \t -> do
+             when (ty /= t) $
+               logErrorFail logsrc $
+                 "Type mismatch:" <+> align ("Expected:" <+> pretty ty <> line
+                                             "Actual:" <+> pretty t <> line)
+                  <> indent 2 ("in lambda expression" <+> pretty lam)
+             return ty
+      >>= exprTypecheck lamExpr
+
+
+
+lamTypecheck' :: (Monad m, MonadIO m, MonadReader TcEnv m,
+                  primtypes ~ ExprPrimTypes expr)
+              => Maybe [Typ primtypes] -> Lambda expr -> m [Typ primtypes]
+lamTypecheck' lam@Lambda{..} =
+  local (\e -> e { envInScope = valFreeVars lamBind <> envInScope e }) $
+    mapM tcVal v >>= exprTypecheck lamExpr
+
+
+
+valTypecheck :: (Monad m, MonadIO m, MonadReader TcEnv m, MonadFail m,
+                 sym ~ ExprSym expr, primtypes ~ ExpPrimTypes expr,
+                 primval ~ ExprPrimVal expr)
+             => Val sym primtypes primval -> m (Typ primtypes)
+valTypecheck = \case
+  e@(ValVar v t) -> do
+    asks envInScope >>= ESet.member v >>= when $
+      logError logsrc $ "Variable not in scope:" <> pretty e
+      fail "type error."
+    return t
+  ValLit _ t -> return t
+  ValUnit    -> return TypUnit
+  ValConst t -> \case { TypNode -> TypINode; v-> TypPtr v } <$> valTypecheck t
+  ValIndex v offset -> do
+    valTypecheck offset >>= \case
+      TypPrim -> return ()
+      x -> logErrorFail logsrc $ "Need primitive type, but" <+> pretty x <> "."
+    valTypecheck v
+  ValUnknown t -> return t
+  ValPrim _ vs ty -> mapM_ valTypecheck vs >> return ty
+  n@(ValNodeC tg as) -> do
+    te <- asks envTyEnv
+    (as',_) <- findArgsType te tg
+    as'' <- mapM valTypecheck as
+    if as'' == as'
+       then return TyNode
+       else logErrorFail logsrc $
+         "NodeC:" <+> align ("arguments do not match" <+> pretty as'' <> line
+                             <> "with:" <+> pretty as' <> line
+                             <> "in context:" <+> pretty n)
+  ValItem _ t -> return t
+
+
+
+
+exprTypecheck :: (Monad m, MonadIO m, MonadReader TcEnv m, MonadFail m,
+                  Expr Expression'' expr, Pretty expr
+                  primtypes ~ ExprPrimTypes expr)
+              => expr -> m [Typ primtypes]
+exprTypecheck e = case exprUnpack e of
+  ExprBind lhs rhs -> lamTypecheck <$> exprTypecheck lhs <*> pure rhs
+  ExprPrim p as t' -> mapM_ valTypecheck vs >> pure t'
+  ExprBaseOp (Apply t) vs -> mapM valTypecheck vs >>= \case
+    (v':_) -> if v' == TypNode
+       then pure t
+       else logErrorFail logsrc $ "App aplly arg doesn't match:" <+> pretty e
+    _ -> logErrorFail logsrc "Bad argument of Apply."
+  ExprBaseOp Eval v -> mapM valTypecheck v >>= \case
+    [TypINode] -> pure [TyNode]
+    _ -> logErrorFail logsrc $ "App aval arg doesn't math:" <+> pretty e
+  ExprBaseOp (StoreNode _) [v@ValNodeC{}] -> valTypecheck v >> exprType e
+  ExprBaseOp Promote vs -> mapM valTypcheck vs >>= \case
+    [TypINode] -> pure [TypNode]
+    _ -> logErrorFail logsrc "Bad arguments of Promote."
+  ExprBaseOp Demote vs -> mapM valTypecheck vs >>= \case
+    [TypNode] -> pure [TypINode]
+    _ -> logErrorFail logsrc "Bad arcuments of Demote."
+  ExprBaseOp Overwrite [w, v@ValNodeC{}] ->
+    valTypecheck w >> valTypecheck v >> pure []
+  ExprBaseOp PokeVal vs -> mapM valTypecheck vs >>= \case
+    [TypPtr t, ty] ->
+      if t == ty then pure []
+                 else logErrorFail logsrc "PokeVal: type doesn't match."
+    _ -> logErrorFail logsrc "Bad arguments of PokeVal."
+  ExprBaseOp PeekVal vs -> mapM valTypecheck vs >>= \case
+    [TypPtr t] -> pure [t]
+    _ -> logErrorFail logsrc "Bad argumebts of PeekVal."
+  ExprApp fn as t -> do
+    te <- asks envTyEnv
+    (as',t') <- findArgsType te fn
+    as'' <- mapM tcVal as
+    if t' == t then
+        if as'' == as'
+           then return t'
+           else logErrorFail logsrc $ "App: arguments do not match: " ++ show (a,as',t')
+     else logErrorFail logsrc $ "App: results do not match: " ++ show (a,t,(as',t'))
+  ExprAlloc v c r -> valTypecheck c >> valTypecheck r >> valTypecheck v
+                       >>= \t -> pure [TyPtr t]
+  ExprReturn vs -> mapM valTypecheck vs
+  ExprError _ t -> pure t
+  ExprCase _ [] -> logErrorFail logsrc "Empty case."
+  ExprCase v as -> do
+    tv <- valTypecheck v
+    mapM_ (lamTypecheck tv) as
+  ExprLet{..} ->
+    local (\e -> e { envTyEnv = extendTyEnv exprDefs (envTyEnv e)}) $
+      mapM_ (lamTypecheck' . funcDefBody) exprDefs
+      exprTypecheck exprBody
+  _-> logErrorFail logsrc $ "Bad expr passed to exprTypecheck" <> pretty e
+
+
+
+
+-- ---------------------------------------------------------------------------
+-- Dump
+
+
+dumpProgram :: (Monad m, MonadIO m, MonadReader env m,
+                HasGrinConfig m,
+                Pretty (Program sym primtypes primopr primval),
+                Pretty (Val sym primtypes primval),
+                Pretty (Tag sym) )
+            => String
+            -> String
+            -> Program sym primtypes primopr primval -> m ()
+dumpProgram filename phase prg@Program{..} = do
+  cfg <- asks grinConfig
+
+  args <- lift getArgs
+  bracket (openfile (filename ++ "_" ++ phase ++ ".grin") WriteMode)
+          hClose $ \h ->
+    hPutDoc h $
+      "--" <+> text (unwords args) <> line <>
+      "--" <+> grinVersion <> line <>
+      pretty prg
+  when (EBSet.member CfgDumpDatalog (cfgSwitches cfg))
+    bracket (openFile (filename ++ "_" ++ phase ++ ".datalog") WriteMode)
+            hClose $ \h -> do
+      hPutDoc h $
+        "%" <+> text (unwords args) <> line <>
+        "%" <+> grinVersion <> line
+      hPrintGrinDL h prg
+  when (EBSet.member CfgDumpGrin (cfgSwitches cfg))
+    putDoc "v--" <+> phase <+> "Grin" <> line
+           pretty prg <> line <>
+           "^--" <+> phase <+> "Grin" <> line
+  where
+    hPrintGrinDL h = do
+      unless (null progCafs) $ do
+        hPutStrLn h "% cafs"
+        forM_ progCafs (\(x,y) -> do
+                  hPutStrLn h "what(" ++ dshow x ++ ",'caf')."
+                  hPutStrLn h "typeof(" ++ dshow y ++ ",inode)." )
+      hPutStrLn h "% functions"
+      forM_ progFunctions $ \FuncDef{..} -> printFunc h funcDefName funcDefBody
+    --
+    printFunc h n Lambda{..} = do
+      hPutStrLn h $ "func(" ++ dshow n ++"," ++ show (length lamBind) ++ "),"
+      hPutStrLn h $ unlines $ for (zip [0..] l) $ \(i, ValVar v t) ->
+        let x = dshow n ++ "@arg@" ++ show i
+         in ["perfom(assign," ++ dshow v ++ "," ++ x ++ ").",
+             "whar(" ++ x ++ ",funarg).",
+             "typeof(" ++ x ++ dshow t ++ ").",
+             "typeof(" ++ dshow v ++ "," ++ dshow t ++ ")." ]
+      rts <- exprType lamExpr
+      let lts = [ (t, dshow n ++ "@ret@" ++ show i) | t <- rts | i <- [0..] ]
+      hPutStrLn h $ unlines $
+        map (\x -> "what(" ++ snd x ++ ",funret).") lts
+        ++ map (\(t, n) -> "typeof(" ++ n ++ "," ++ dshow t ++ ").") lts
+      printDL h n (map (Left . snd) lts) lamExpr
+
+
+
+
+
+escapeStr :: String -> String
+escapeStr = \case
+  "" -> ""
+  '\'':xs -> "''" ++ escapeStr xs
+  x:xs -> x:escapeStr xs
+
+dshow :: Pretty a => a -> String
+dshow = escapeStr . plain . pretty
+
+
+
 
 funArg n i = show n ++ "@arg@" ++ show i
 funRet n i = show n ++ "@ret@" ++ show i
-
-printFunc h n (l :-> e) = do
-    hPrintf h "func(%s,%i).\n" (dshow n) (length l)
-    forM_ (zip naturals l) $ \ (i,Var v t) -> do
-        hPrintf h "perform(assign,%s,%s).\n" (dshow v) (dshow $ funArg n i)
-        hPrintf h "what(%s,funarg).\n" (dshow $ funArg n i)
-        hPrintf h "typeof(%s,%s).\n" (dshow $ funArg n i) (dshow t)
-        hPrintf h "typeof(%s,%s).\n" (dshow v) (dshow t)
-    let rts = getType e
-        lts = [ (t,funRet n i) | t <- rts | i <- naturals ]
-    mapM_ (hPrintf h "what(%s,funret).\n" . dshow) (snds lts)
-    mapM_ (\ (t,n) -> hPrintf h "typeof(%s,%s).\n" (dshow n) (dshow t)) lts
-    printDL h n (map (Left . snd) lts) e
-
-hPrintGrinDL :: Handle -> Grin -> IO ()
-hPrintGrinDL h grin = do
-    let cafs = grinCafs grin
-    when (not $ null cafs) $ do
-        hPutStrLn h "% cafs"
-        mapM_ (\ (x,y) -> hPrintf h "what(%s,'caf').\ntypeof(%s,inode).\n" (dshow x) (dshow x))  cafs
-    hPutStrLn h "% functions"
-    forM_ (grinFuncs grin) $ \ (n,l :-> e) -> printFunc h n (l :-> e)
 
 bindUnknown h l r = do
     mapM_ (\ (x,t) -> when (tyInteresting t) $ setUnknown h x r) (Set.toList $ freeVars l :: [(Var,Ty)])
@@ -125,9 +274,6 @@ printDL h n fs e = f fs e where
         f (map Right l) x
         f fs y
     f bs (Return vs) = do zipWithM_ (assign "assign") bs vs
---    f [Left b] (Store (NodeC n vs)) = hPrintf h "store(%s,%s,%s).\n" (dshow b) (dshow n) (if tagIsWHNF n then "true" else "false")
---    f [Right (Var b _)] (Store (NodeC n vs)) = hPrintf h "store(%s,%s,%s).\n" (dshow b) (dshow n) (if tagIsWHNF n then "true" else "false") >> app n vs
---    f [b] (Store x@Var {}) = do assign "demote" b x
     f [b] (BaseOp Eval [x]) = do assign "eval" b x
     f b (App fn as ty) = do
         forM_ (zip naturals as) $ \ (i,a) -> do
@@ -147,11 +293,6 @@ printDL h n fs e = f fs e where
             genAssign "assign" a (Left $ funRet fn i)
 
     f bs e = do zipWithM_ (assign "assign") bs (map ValUnknown (getType e))
-    --app n as | Just (0,fn) <- tagUnfunction n = do
-    --    hPrintf h "lazyfunc(%s).\n" (dshow fn)
-    --    forM_ (zip naturals as) $ \ (i,a) -> do
-    --        assign "assign" (Left $ funArg fn i) a
-    --app _ _ = return ()
     assign op b v = genAssign op b (Right v)
 
     genAssign :: String -> Either String Val -> Either String Val -> IO ()
@@ -165,165 +306,4 @@ printDL h n fs e = f fs e where
 
 tyInteresting ty = ty == TyNode || ty == tyINode
 
-transformGrin :: TransformParms Grin -> Grin -> IO Grin
 
-transformGrin TransformParms { transformIterate = IterateMax n } prog | n <= 0 = return prog
-transformGrin TransformParms { transformIterate = IterateExactly n } prog | n <= 0 = return prog
-transformGrin tp prog = do
-    let dodump = transformDumpProgress tp
-        name = transformCategory tp ++ pname (transformPass tp) ++ pname (transformName tp)
-        _scname = transformCategory tp ++ pname (transformPass tp)
-        pname "" = ""
-        pname xs = '-':xs
-        iterate = transformIterate tp
-    when dodump $ putErrLn $ "-- " ++ name
-    let ferr e = do
-        putErrLn $ "\n>>> Exception thrown"
-        putErrLn $ "\n>>> Before " ++ name
-        dumpGrin ("lint-before-" ++ name) prog
-        putErrLn $ "\n>>>"
-        putErrLn (show (e::SomeException'))
-        maybeDie
-        return prog
-    let istat = grinStats prog
-    prog' <- Control.Exception.catch (transformOperation tp prog { grinStats = mempty } >>= Control.Exception.evaluate ) ferr
-    let estat = grinStats prog'
-    let onerr grin' = do
-            putErrLn $ "\n>>> Before " ++ name
-            dumpGrin ("lint-before-" ++ name) prog
-            Stats.printStat name estat
-            putErrLn $ "\n>>> After " ++ name
-            dumpGrin ("lint-after-" ++ name) grin'
-    if transformSkipNoStats tp && Stats.null estat then do
-        when dodump $ putErrLn "program not changed"
-        return prog
-     else do
-    when (dodump && not (Stats.null estat)) $ Stats.printStat  name estat
-    lintCheckGrin' (onerr prog') prog'
-    let tstat = istat `mappend` estat
-    if doIterate iterate (not $ Stats.null estat) then transformGrin tp { transformIterate = iterateStep iterate } prog' { grinStats = tstat } else return prog' { grinStats = tstat }
---    if doIterate iterate (estat /= mempty) then transformGrin tp { transformIterate = iterateStep iterate } prog' { progStats = istat `mappend` estat } else
---        return prog' { progStats = istat `mappend` estat, progPasses = name:progPasses prog' }
-
-maybeDie = case optKeepGoing options of
-    True -> return ()
-    False -> putErrDie "Internal Error"
-
-data TcEnv = TcEnv {
-    envTyEnv :: TyEnv,
-    envInScope :: Set.Set Var
-}
-
-newtype Tc a = Tc (ReaderT TcEnv (Either String) a)
-    deriving(Monad,MonadReader TcEnv)
-
-tcErr :: String -> Tc a
-tcErr s = Tc $ lift (Left s)
-
-runTc :: TcEnv -> Tc a -> Either String a
-runTc env (Tc r) = runReaderT r env
-
-same _ t1 t2 | t1 == t2 = return t1
-same msg t1 t2 = tcErr $ "Types not the same:" <+> parens msg <+> parens (tshow t1) <+> parens (tshow t2)
-
-tcLam :: Maybe [Ty] -> Lam -> Tc [Ty]
-tcLam mty (v :-> e) = f mty where
-    f Nothing = ans (mapM tcVal v)
-    f (Just ty) = ans $ do
-        t <- mapM tcVal v
-        same (":->" <+> show mty <+> show (v :-> e)) ty t
-    ans r = local (\e -> e { envInScope = freeVars v `mappend` envInScope e }) $ r >> tcExp e
-
-tcExp :: Exp -> Tc [Ty]
-tcExp e = f e where
-    f (e :>>= lam) = do
-        t1 <- f e
-        tcLam (Just t1) lam
-    f n@(Prim p as t') = do
-        mapM_ tcVal as
-        return t'
-    f ap@(BaseOp (Apply t) vs) = do
-        (v':_) <- mapM tcVal vs
-        if v' == TyNode then return t
-         else tcErr $ "App apply arg doesn't match: " ++ show ap
-    f ap@(BaseOp Eval [v]) = do
-        v' <- tcVal v
-        if v' == tyINode then return [TyNode]
-         else tcErr $ "App eval arg doesn't match: " ++ show ap
-    f a@(App fn as t) = do
-        te <- asks envTyEnv
-        (as',t') <- findArgsType te fn
-        as'' <- mapM tcVal as
-        if t' == t then
-            if as'' == as' then return t' else
-                tcErr $ "App: arguments do not match: " ++ show (a,as',t')
-         else tcErr $ "App: results do not match: " ++ show (a,t,(as',t'))
-    f e@(BaseOp (StoreNode _) vs) = do
-        [NodeC {}] <- return vs
-        mapM_ tcVal vs
-        return (getType e)
-    f Alloc { expValue = v, expCount = c, expRegion = r } = do
-        t <- tcVal v
-        tcVal c
-        tcVal r
-        return [TyPtr t]
-    f (Return v) = mapM tcVal v
-    f (BaseOp Promote [v]) = do
-        TyINode <- tcVal v
-        return [TyNode]
-    f (BaseOp Demote [v]) = do
-        TyNode <- tcVal v
-        return [TyINode]
-    f (Error _ t) = return t
-    f e@(BaseOp Overwrite [w,v]) = do
-        NodeC {} <- return v
-        tcVal w
-        tcVal v
-        return []
-    f e@(BaseOp PokeVal [w,v]) = do
-        TyPtr t <- tcVal w
-        tv <- tcVal v
-        when (t /= tv) $
-            tcErr "PokeVal: types don't match"
-        return []
-    f e@(BaseOp PeekVal [w]) = do
-        TyPtr t <- tcVal w
-        return [t]
-    f (Case _ []) = tcErr "empty case"
-    f (Case v as) = do
-        tv <- tcVal v
-        es <- mapM (tcLam (Just [tv])) as
-        foldl1M (same $ "case exp: " ++ show (map head $ sortGroupUnder fst (zip es as)) ) es
-    f (Let { expDefs = defs, expBody = body }) = do
-        local (\e -> e { envTyEnv = extendTyEnv defs (envTyEnv e) }) $ do
-            mapM_ (tcLam Nothing) [ b | FuncDef { funcDefBody = b } <- defs ]
-            f body
-    f _ = error "Grin.Lint: unknown value passed to f"
-
-tcVal :: Val -> Tc Ty
-tcVal v = f v where
-    f e@(Var v t) = do
-        s <- asks envInScope
-        case v `member` s of
-            True -> return t
-            False -> tcErr $ "variable not in scope: " ++ show e
-    f (Lit _ t) = return t
-    f Unit = return TyUnit
-    f (Const t) = do
-        v <- f t
-        case v of
-            TyNode -> return TyINode
-            v -> return (TyPtr v)
-    f (Index v offset) = do
-        t <- f v
-        TyPrim _ <- f offset
-        return t
-    f (ValUnknown ty) = return ty
-    f (ValPrim _ vs ty) = do mapM_ f vs >> return ty
-    f n@(NodeC tg as) = do
-        te <- asks envTyEnv
-        (as',_) <- findArgsType te tg
-        as'' <- mapM f as
-        if as'' == as' then return TyNode else
-            tcErr $ "NodeC: arguments do not match " ++ show n ++ show (as'',as')
-    f (Item _ t) = return t

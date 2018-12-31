@@ -237,7 +237,7 @@ logFatal s = sendLog s LevelFatal
 
 
 logErrorFail, logFatalFail
-  :: (MonadIO m, MonadFail m, MonadReader env m, HasLogFunc env) => LogSource -> Doc -> m ()
+  :: (MonadIO m, MonadFail m, MonadReader env m, HasLogFunc env) => LogSource -> Doc -> m a
 logErrorFail x y = logError x y >> fail (T.unpack x)
 {-# INLINE logErrorFail #-}
 logFatalFail x y = logFatal x y >> fail (T.unpack x)
@@ -264,7 +264,7 @@ logFatalM s m = getLogFuncM >>= liftIO . sendLog' s LevelFatal m
 
 
 logErrorFailM, logFatalFailM
-  :: (MonadIO m, MonadFail m, MonadLogging m) => LogSource -> Doc -> m ()
+  :: (MonadIO m, MonadFail m, MonadLogging m) => LogSource -> Doc -> m a
 logErrorFailM s m = getLogFuncM >>= liftIO . sendLog' s LevelError m
                     >> fail (T.unpack s)
 {-# INLINE logErrorFailM #-}

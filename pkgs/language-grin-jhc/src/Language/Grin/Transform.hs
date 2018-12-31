@@ -78,7 +78,7 @@ updateFuncProps Lambda{..} fp@FuncProps{..} =
 -- ---------------------------------------------------------------------------
 
 
-newFuncDef :: Bool -> sym -> Lambda expr
+newFuncDef :: Bool -> Tag sym -> Lambda expr
            -> FuncDef sym primtypes primval expr
 newFuncDef local name lam = FuncDef {
     funcDefName = name,
@@ -366,3 +366,53 @@ newVarName (V sv) = do
         Right n -> do
             put $! (Right $! (n + 1))
             return $ V n
+
+
+
+
+
+
+transformGrin :: TransformParms Grin -> Grin -> IO Grin
+transformGrin TransformParms { transformIterate = IterateMax n } prog | n <= 0 = return prog
+transformGrin TransformParms { transformIterate = IterateExactly n } prog | n <= 0 = return prog
+transformGrin tp prog = do
+    let dodump = transformDumpProgress tp
+        name = transformCategory tp ++ pname (transformPass tp) ++ pname (transformName tp)
+        _scname = transformCategory tp ++ pname (transformPass tp)
+        pname "" = ""
+        pname xs = '-':xs
+        iterate = transformIterate tp
+    when dodump $ putErrLn $ "-- " ++ name
+    let ferr e = do
+        putErrLn $ "\n>>> Exception thrown"
+        putErrLn $ "\n>>> Before " ++ name
+        dumpGrin ("lint-before-" ++ name) prog
+        putErrLn $ "\n>>>"
+        putErrLn (show (e::SomeException'))
+        --
+        case optKeepGoing options of
+          True -> return ()
+          False -> putErrDie "Internal Error"
+        --
+        return prog
+    let istat = grinStats prog
+    prog' <- Control.Exception.catch (transformOperation tp prog { grinStats = mempty } >>= Control.Exception.evaluate ) ferr
+    let estat = grinStats prog'
+    let onerr grin' = do
+            putErrLn $ "\n>>> Before " ++ name
+            dumpGrin ("lint-before-" ++ name) prog
+            Stats.printStat name estat
+            putErrLn $ "\n>>> After " ++ name
+            dumpGrin ("lint-after-" ++ name) grin'
+    if transformSkipNoStats tp && Stats.null estat then do
+        when dodump $ putErrLn "program not changed"
+        return prog
+     else do
+    when (dodump && not (Stats.null estat)) $ Stats.printStat  name estat
+    lintCheckGrin' (onerr prog') prog'
+    let tstat = istat `mappend` estat
+    if doIterate iterate (not $ Stats.null estat) then transformGrin tp { transformIterate = iterateStep iterate } prog' { grinStats = tstat } else return prog' { grinStats = tstat }
+
+
+
+

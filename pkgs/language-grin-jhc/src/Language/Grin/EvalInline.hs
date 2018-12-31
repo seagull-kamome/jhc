@@ -1,7 +1,5 @@
 module Language.Grin.EvalInline(createEvalApply) where
 
-import qualified Data.Text as T
-
 import qualified Control.Monad.Memo as Memo  -- monad-memo
 import Control.Monad.Fresh.Flat -- monad-freshid
 
