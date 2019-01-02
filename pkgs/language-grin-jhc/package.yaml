@@ -16,6 +16,7 @@ library:
     - -Wall
   default-extensions:
     - CPP
+    - BangPatterns
     - GADTs
     - StandaloneDeriving
     - RankNTypes
@@ -28,6 +29,7 @@ library:
     - FunctionalDependencies
     - FlexibleContexts
     - LambdaCase
+    - MultiWayIf
     - ExistentialQuantification
     - GeneralizedNewtypeDeriving
     - TypeFamilies

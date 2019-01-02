@@ -210,7 +210,7 @@ exprTypecheck e = case exprUnwrap e of
   ExprCase _ [] -> logErrorFail logsrc "Empty case."
   ExprCase v as -> do
     tv <- valTypecheck v
-    es <- mapM (lamTypecheck tv) as
+    es <- mapM (lamTypecheck [tv]) as
     let g (x0:x1:xs) (y0:y1:ys) = do
             when (x0 /= x1) $
               logErrorFail logsrc $ prettyTypemismatch "case clause" x0 x1 (pretty y1)

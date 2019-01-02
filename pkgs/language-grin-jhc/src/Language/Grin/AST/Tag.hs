@@ -1,7 +1,7 @@
 module Language.Grin.AST.Tag (
   TagType(..), Tag''(..), Tag(..),
   isSuspFunction, isFunction, isPartialAp, isTag, isWHNF,
-  tagToPartial, tagToFunction, tagUnfunction, flipFunction
+  tagToPartial, tagToFunction, tagUnfunction, tagFlipFunction
   ) where
 
 import Text.PrettyPrint.ANSI.Leijen hiding((<$>))
@@ -163,12 +163,12 @@ tagUnfunction (Tag (TagPApp x y)) = Just (y, Tag x)
 tagUnfunction _ = Nothing
 
 
-flipFunction :: Tag sym -> Maybe (Tag sym)
-flipFunction (Tag (TagSusp x _)) = Just $ Tag x
-flipFunction (Tag (TagSusp' x _)) = Just $ Tag x
-flipFunction (Tag x@TagFunc{}) = Just $ Tag $ TagSusp x True
-flipFunction (Tag x@TagFunc'{}) = Just $ Tag $ TagSusp' x True
-flipFunction _ = Nothing
+tagFlipFunction :: Tag sym -> Maybe (Tag sym)
+tagFlipFunction (Tag (TagSusp x _)) = Just $ Tag x
+tagFlipFunction (Tag (TagSusp' x _)) = Just $ Tag x
+tagFlipFunction (Tag x@TagFunc{}) = Just $ Tag $ TagSusp x True
+tagFlipFunction (Tag x@TagFunc'{}) = Just $ Tag $ TagSusp' x True
+tagFlipFunction _ = Nothing
 
 
 -- vim: ts=8 sw=2 expandtab :
