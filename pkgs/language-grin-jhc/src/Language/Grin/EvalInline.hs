@@ -46,7 +46,9 @@ createApply argType retType te ts' =
 
 
 {-# NOINLINE createEvalApply #-}
-createEvalApply :: (Monad m, MonadIO m) => Program -> m Program
+createEvalApply :: (Monad m, MonadIO m)
+                => Program sym primtypes primopr primval
+                -> m (Program sym primtypes primopr primval)
 createEvalApply prg@Program{..} = do
   --
   let g (ExprBaseOp (Apply ty) [fun]) =

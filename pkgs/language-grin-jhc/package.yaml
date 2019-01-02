@@ -38,6 +38,7 @@ library:
     - base >= 4.7 && < 5
     - text
     - mtl
+    - transformers
     - containers
     - containers-missing
     - ansi-wl-pprint

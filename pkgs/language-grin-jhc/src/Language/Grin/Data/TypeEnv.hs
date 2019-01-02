@@ -6,6 +6,7 @@ import qualified Data.Map.Strict as Map
 
 import Language.Grin.AST.Type
 import Language.Grin.AST.Tag
+import Language.Grin.Data.FuncDef
 
 
 -- ---------------------------------------------------------------------------
@@ -30,6 +31,20 @@ findTypeOfType y (TypeEnv x) =
         Nothing -> fail $ "findArgTypes: " <> show y
       Tag (TagHole _) -> pure $ emptyTypeOfType { typReturn = [TypNode] }
       _ -> fail $ "findArgType: " <> show y
+
+
+extendTyEnv :: [FuncDef sym primtypes primval expr]
+            -> TyEnv sym primtypes
+            -> TyEnv sym primtypes
+extendTyEnv ds (TyEnv env) = TyEnv (fromList xs `mappend` env)
+  where
+    xs = [ (funcDefName d,
+            emptyTypeOfType { tySlots = ss, tyReturn = r })
+          |  d <- ds, let (ss,r) = funcType $ funcDefProps d ]
+      ++ [ (tagFlipFunction (funcDefName d), 
+           emptyTypeOfType { tySlots = ss, tyReturn = r })
+          |  d <- ds, let (ss,r) = funcType $ funcDefProps d, r == [TyNode]]
+
 
 
 

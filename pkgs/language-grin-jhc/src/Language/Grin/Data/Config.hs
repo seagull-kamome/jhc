@@ -1,6 +1,7 @@
 module Language.Grin.Data.Config (
   CfgSwitches(..), GrinConfig(..), HasGrinConfig(..),
   defaultGrinConfig,
+  isGrinSwitchEnabled,
   grinVersion
   ) where
 
@@ -18,13 +19,18 @@ data GrinConfig = GrinConfig {
   cfgSwitches   :: EBSet.EnumBitSet64 CfgSwitches
   }
 
-class HasGrinConfig env where grinConfig :: env -> GrinConfig
 
+class HasGrinConfig env where grinConfig :: env -> GrinConfig
+instance HasGrinConfig GrinConfig where grinConfig = id
 
 defaultGrinConfig :: GrinConfig
 defaultGrinConfig = GrinConfig {
   cfgSwitches = EBSet.fromList [CfgLintCheck, CfgDebugDupFunctions]
   }
+
+
+isGrinSwitchEnabled :: HasGrinConfig env => CfgSwitches -> env -> Bool
+isGrinSwitchEnabled sw = EBSet.member sw . cfgSwitches . grinConfig
 
 
 grinVersion :: IsString str => str

@@ -1,6 +1,6 @@
 module Language.Grin.AST.Val (
   Val(..), n0, n1, n2, n3, p0, p1, p2, p3, isVar,
-  valType, valFreeVars, valFreeTagVars,
+  valType, valFreeVars, valFreeVars', valFreeTagVars,
   valIsConstant,
   properHole, isHole
   ) where
@@ -31,8 +31,7 @@ data Val sym primtypes primval
   deriving (Eq, Ord)
 
 
-instance (Pretty (Tag sym), Pretty sym, Pretty (Typ primtypes),
-          PrimType primtypes, Pretty primval)
+instance (Pretty sym, PrimType primtypes, Pretty primtypes, Pretty primval)
     => Pretty (Val sym primtypes primval) where
   pretty = \case
     ValNodeC t [] -> pretty t
@@ -80,17 +79,18 @@ isVar _ = False
 
 -- | Resolve type of the value
 valType :: Monad m => Val sym primtypes primval -> m (Typ primtypes)
-valType (ValNodeC _ _) = pure TypNode
-valType (ValConst x) = valType x >>= \case
-  TypNode -> pure TypINode
-  _ -> fail "Val.getType: Const of non-node."
-valType (ValLit _ t) = pure t
-valType (ValVar _ t) = pure t
-valType ValUnit = pure TypUnit
-valType (ValPrim _ _ t) = pure t
-valType (ValIndex v _) = valType v
-valType (ValItem _ t) = pure t
-valType (ValUnknown t) = pure t
+valType = \case
+  (ValNodeC _ _) -> pure TypNode
+  (ValConst x) -> valType x >>= \case
+    TypNode -> pure TypINode
+    _ -> fail "Val.getType: Const of non-node."
+  (ValLit _ t) -> pure t
+  (ValVar _ t) -> pure t
+  ValUnit -> pure TypUnit
+  (ValPrim _ _ t) -> pure t
+  (ValIndex v _) -> valType v
+  (ValItem _ t) -> pure t
+  (ValUnknown t) -> pure t
 
 
 
@@ -101,6 +101,15 @@ valFreeVars = ESet.unions . map (\case
   ValIndex x y  -> valFreeVars [x, y]
   ValVar v _    -> ESet.singleton v
   _ -> ESet.empty)
+
+
+valFreeVars' :: Ord primtypes => [Val sym primtypes primval] -> Set.Set (Var, Typ primtypes)
+valFreeVars' = Set.unions . map (\case
+  ValNodeC _ xs -> valFreeVars' xs
+  ValConst v    -> valFreeVars' [v]
+  ValIndex x y  -> valFreeVars' [x, y]
+  ValVar v t    -> Set.singleton (v, t)
+  _             -> Set.empty )
 
 
 

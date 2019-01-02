@@ -6,13 +6,14 @@ import qualified Data.Text as T
 
 -- ---------------------------------------------------------------------------
 
-class Expr (e'' :: * -> * -> * -> * -> * -> *) e | e -> e'' where
+class Expr e where
   type ExprSym e :: *
   type ExprPrimTypes e :: *
   type ExprPrimOpr e :: *
   type ExprPrimVal e :: *
-  exprUnwrap :: e -> e'' (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e
-  exprWrap :: e'' (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e-> e
+  type ExprRep e :: * -> * -> * -> * -> * -> *
+  exprUnwrap :: e -> ExprRep e (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e
+  exprWrap :: ExprRep e (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e -> e
 
 
 

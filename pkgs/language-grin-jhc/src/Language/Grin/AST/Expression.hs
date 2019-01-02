@@ -1,4 +1,3 @@
-{-# LANGUAGE UndecidableInstances #-}
 module Language.Grin.AST.Expression (
   FuncDef(..),
   --
@@ -27,23 +26,10 @@ import Language.Grin.AST.Type
 import Language.Grin.AST.Lambda
 import Language.Grin.AST.BasicOperation
 import Language.Grin.Data.FuncProps
+import Language.Grin.Data.FuncDef
 import Language.Grin.Internal.Classes
 import Language.Grin.Internal.Classes.PrimOpr
 import qualified Language.Grin.Internal.Highlighter as H
-
-
--- ---------------------------------------------------------------------------
-
-data FuncDef sym primtypes primval expr = FuncDef {
-    funcDefName :: !(Tag sym),
-    funcDefBody :: !(Lambda expr),
-    funcDefCall :: !(Val sym primtypes primval),
-    funcDefProps :: !(FuncProps sym (Typ primtypes))
-  }
-  -- deriving (Show, Eq, Ord)
-
-
-
 
 
 -- ---------------------------------------------------------------------------
@@ -55,7 +41,7 @@ data Expression'' sym primtypes primopr primval expr
       expBaseOp :: !(BasicOperation primtypes),
       expArgs :: ![Val sym primtypes primval] }
   | ExprApp {
-      expFunction :: !sym,
+      expFunction :: !(Tag sym),
       expArgs :: ![Val sym primtypes primval],
       expType :: ![Typ primtypes] }
   | ExprPrim {
@@ -112,9 +98,10 @@ data Expression'' sym primtypes primopr primval expr
 -- ---------------------------------------------------------------------------
 
 
-instance (Expr Expression'' expr,
+instance (Expr expr,
           sym ~ ExprSym expr, primtypes ~ ExprPrimTypes expr, primval ~ ExprPrimVal expr,
           primopr ~ ExprPrimOpr expr,
+          Expression'' ~ ExprRep expr,
           Pretty sym,
           Pretty (Val sym primtypes primval),
           Pretty primtypes,
@@ -204,13 +191,8 @@ instance (Expr Expression'' expr,
                                 _ -> brackets (pretty expCount)
                           <+> "at" <+> pretty expRegion
       ExprLet{..} -> vl <+> H.kwd (if expIsNormal then "let" else "let*")
-                     <> align (vsep $ map f expDefs)
+                     <> align (vsep $ map pretty expDefs)
                      <> line <> "in" <> align (pretty expBody)
-        where
-          f FuncDef{..} = H.fncname (pretty funcDefName)
-                            <+> hsep (map pretty $ lamBind funcDefBody)
-                            <+> H.opr "=" <+> H.kwd "do"
-                            <+> align (pretty $ lamExpr funcDefBody)
       -- ExprMkClosure -> error
       -- ExprMkCont -> error
       ExprGcRoots vs bdy -> vl <+> H.kwd "withRoots" <> tupled (map pretty vs)
@@ -223,7 +205,7 @@ instance (Expr Expression'' expr,
 -- ---------------------------------------------------------------------------
 
 
-exprFreeVars :: Expr Expression'' e => e -> ESet.EnumSet Var
+exprFreeVars :: (Expr e, Expression'' ~ ExprRep e) => e -> ESet.EnumSet Var
 exprFreeVars expr = case exprUnwrap expr of
   ExprBind e lam -> exprFreeVars e <> lamFreeVars lam
   ExprBaseOp _ vs -> valFreeVars vs
@@ -243,7 +225,8 @@ exprFreeVars expr = case exprUnwrap expr of
 
 
 
-exprFreeTagVars :: (Ord (ExprSym e), Expr Expression'' e) => e -> Set.Set (Tag (ExprSym e))
+exprFreeTagVars :: (Ord (ExprSym e), Expr e, Expression'' ~ ExprRep e)
+                => e -> Set.Set (Tag (ExprSym e))
 exprFreeTagVars expr = case exprUnwrap expr of
   ExprBind e lam -> exprFreeTagVars e <> lamFreeTagVars lam
   ExprBaseOp _ vs -> valFreeTagVars vs
@@ -265,7 +248,8 @@ exprFreeTagVars expr = case exprUnwrap expr of
 
 
 
-exprType :: (Monad m, Expr Expression'' e) => e -> m [Typ (ExprPrimTypes e)]
+exprType :: (Monad m, Expr e, Expression'' ~ ExprRep e)
+         => e -> m [Typ (ExprPrimTypes e)]
 exprType expr = case exprUnwrap expr of
   ExprBind _ (Lambda _ bdy) -> exprType bdy
   ExprBaseOp{..} -> case expBaseOp of
@@ -311,7 +295,7 @@ exprType expr = case exprUnwrap expr of
 -- ---------------------------------------------------------------------------
 
 
-lamType :: Expr Expression'' expr
+lamType :: (Expr expr, Expression'' ~ ExprRep expr)
         => Lambda expr -> Either T.Text ([Typ (ExprPrimTypes expr)], [Typ (ExprPrimTypes expr)])
 lamType Lambda{..} =
   case (mapM valType lamBind, exprType lamExpr) of
@@ -321,12 +305,12 @@ lamType Lambda{..} =
 
 
 
-lamFreeVars :: Expr Expression'' expr => Lambda expr -> ESet.EnumSet Var
+lamFreeVars :: (Expr expr, Expression'' ~ ExprRep expr) => Lambda expr -> ESet.EnumSet Var
 lamFreeVars Lambda{..} = ESet.intersection (exprFreeVars lamExpr) (valFreeVars lamBind)
 
 
 
-lamFreeTagVars :: (Expr Expression'' expr, Ord (ExprSym expr))
+lamFreeTagVars :: (Expr expr, Expression'' ~ ExprRep expr, Ord (ExprSym expr))
                => Lambda expr -> Set.Set (Tag (ExprSym expr))
 lamFreeTagVars (Lambda vs e) = Set.intersection (exprFreeTagVars e) (valFreeTagVars vs)
 
@@ -336,7 +320,7 @@ lamFreeTagVars (Lambda vs e) = Set.intersection (exprFreeTagVars e) (valFreeTagV
 -- ---------------------------------------------------------------------------
 
 
-exprIsNop :: Expr Expression'' expr => expr -> Bool
+exprIsNop :: (Expr expr, Expression'' ~ ExprRep expr) => expr -> Bool
 exprIsNop e = case exprUnwrap e of
   ExprBaseOp Promote _ -> True
   ExprBaseOp Demote _ -> True
@@ -344,7 +328,9 @@ exprIsNop e = case exprUnwrap e of
 
 
 
-exprIsOmittable :: (Expr Expression'' expr, PrimOpr (ExprPrimOpr expr)) => expr -> Bool
+exprIsOmittable :: (Expr expr, Expression'' ~ ExprRep expr,
+                    PrimOpr (ExprPrimOpr expr))
+                => expr -> Bool
 exprIsOmittable e = case exprUnwrap e of
   ExprBaseOp Promote _ -> True
   ExprBaseOp Demote _ -> True
@@ -363,7 +349,9 @@ exprIsOmittable e = case exprUnwrap e of
 
 
 
-exprIsErrOmittable :: (Expr Expression'' expr, PrimOpr (ExprPrimOpr expr)) => expr -> Bool
+exprIsErrOmittable :: (Expr expr, Expression'' ~ ExprRep expr,
+                       PrimOpr (ExprPrimOpr expr))
+                   => expr -> Bool
 exprIsErrOmittable e = case exprUnwrap e of
   ExprBaseOp Overwrite _ -> True
   ExprBaseOp PokeVal _   -> True
@@ -389,11 +377,12 @@ instance (PrimType primtypes, Pretty sym, Pretty primtypes, Pretty primval, Prim
     => Pretty (Expression sym primtypes primopr primval) where
   pretty (Expression x) = pretty x
 
-instance Expr Expression'' (Expression sym primtypes primopr primval) where
+instance Expr (Expression sym primtypes primopr primval) where
   type ExprSym (Expression sym primtypes primopr primval) = sym
   type ExprPrimTypes (Expression sym primtypes primopr primval) = primtypes
   type ExprPrimOpr (Expression sym primtypes primopr primval) = primopr
   type ExprPrimVal (Expression sym primtypes primopr primval) = primval
+  type ExprRep (Expression sym primtypes primopr primval) = Expression''
   exprUnwrap (Expression x) = x
   exprWrap = Expression
 
