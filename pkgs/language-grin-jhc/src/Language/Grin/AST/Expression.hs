@@ -378,11 +378,11 @@ instance (PrimType primtypes, Pretty sym, Pretty primtypes, Pretty primval, Prim
   pretty (Expression x) = pretty x
 
 instance Expr (Expression sym primtypes primopr primval) where
-  type ExprSym (Expression sym primtypes primopr primval) = sym
+  type ExprSym       (Expression sym primtypes primopr primval) = sym
   type ExprPrimTypes (Expression sym primtypes primopr primval) = primtypes
-  type ExprPrimOpr (Expression sym primtypes primopr primval) = primopr
-  type ExprPrimVal (Expression sym primtypes primopr primval) = primval
-  type ExprRep (Expression sym primtypes primopr primval) = Expression''
+  type ExprPrimOpr   (Expression sym primtypes primopr primval) = primopr
+  type ExprPrimVal   (Expression sym primtypes primopr primval) = primval
+  type ExprRep       (Expression sym primtypes primopr primval) = Expression''
   exprUnwrap (Expression x) = x
   exprWrap = Expression
 

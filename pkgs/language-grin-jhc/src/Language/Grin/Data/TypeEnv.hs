@@ -1,9 +1,14 @@
 module Language.Grin.Data.TypeEnv (
-  TypeEnv(..), findTypeOfType, -- findArgType, findArgs
+  TypeEnv(..), HasTypeEnv(..),
+  findTypeOfType, -- findArgType, findArgs
   extendTyEnv
   ) where
 
+import Prelude hiding(fail)
+
 import qualified Data.Map.Strict as Map
+import Control.Monad.Fail (MonadFail(..))
+import Control.Monad.Reader.Class
 
 import Language.Grin.AST.Type
 import Language.Grin.AST.Tag
@@ -18,23 +23,37 @@ newtype TypeEnv sym primtypes
   = TypeEnv { fromTypeEnv :: Map.Map (Tag sym) (TypeOfType sym primtypes) }
   deriving (Semigroup, Monoid)
 
+class HasTypeEnv env sym primtypes | env -> sym primtypes where
+  getTypeEnv :: env -> TypeEnv sym primtypes
 
 
+-- ---------------------------------------------------------------------------
 
-findTypeOfType :: (Show (Tag sym), Ord sym, Monad m)
+
+findTypeOfType :: (Ord sym,
+                   Monad m, MonadFail m,
+                   MonadReader env m, HasTypeEnv env sym primtypes)
                => Tag sym
-               -> TypeEnv sym primtypes
                -> m (TypeOfType sym primtypes)
-findTypeOfType y (TypeEnv x) =
+findTypeOfType y = do
+  TypeEnv x <- asks getTypeEnv
   case Map.lookup y x of
     Just z -> pure z
-    Nothing -> case y of
-      Tag (TagTypePApp c n) -> case Map.lookup (Tag c) x of
-        Just (TypeOfType ts tr _ _) ->
-          pure $ emptyTypeOfType { typSlots = take (length ts - fromIntegral n) ts, typReturn =  tr }
-        Nothing -> fail $ "findArgTypes: " <> show y
-      Tag (TagHole _) -> pure $ emptyTypeOfType { typReturn = [TypNode] }
-      _ -> fail $ "findArgType: " <> show y
+    Nothing ->  case y of
+        Tag (TagTypePApp c n) -> case Map.lookup (Tag c) x of
+          Just (TypeOfType ts tr _ _) ->
+            pure $ emptyTypeOfType { typSlots = take (length ts - fromIntegral n) ts, typReturn =  tr }
+          Nothing -> fail "findArgTypes: "
+        Tag (TagHole _) -> pure $ emptyTypeOfType { typReturn = [TypNode] }
+        _ -> fail "findArgType: "
+
+
+
+-- findArgTypes :: Tag sym -> TypeEnv sym primtypes -> Typ primtypes
+-- findArgsType m a = liftM (\x -> (typSlots x,typReturn x)) (findTypeOfType m a)
+-- findArgs m a = case findArgsType m a of
+--    Nothing -> fail $ "findArgs: " ++ show a
+--    Just (as,_) -> return as
 
 
 

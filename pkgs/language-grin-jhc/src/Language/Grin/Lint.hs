@@ -1,23 +1,22 @@
 module Language.Grin.Lint(
-  progTypecheck, dumpProgram
+  progTypecheck --, dumpProgram
     ) where
 
 import Prelude hiding(fail)
 
-import Data.Maybe (isNothing)
+import Data.Maybe (isJust)
 import qualified Data.Text as T
 import Control.Monad.IO.Class
 import Control.Monad.Fail (MonadFail(..))
-import Control.Exception (bracket)
-import System.Environment
-import System.IO (Handle, IOMode(WriteMode), openFile, hClose, hPutStrLn, withFile)
+-- import System.Environment
+-- import System.IO (Handle, IOMode(WriteMode), openFile, hClose, hPutStrLn, withFile)
 
 import Control.Monad.Trans.Maybe
 import Control.Monad.Reader hiding(fail)
 
-import qualified Data.EnumSet.EnumSmallBitSet as EBSet -- containers-missing
+--import qualified Data.EnumSet.EnumSmallBitSet as EBSet -- containers-missing
 import qualified Data.EnumSet.EnumSet as ESet          -- containers-missing
-import qualified Data.Set as Set -- containers
+--import qualified Data.Set as Set -- containers
 
 import Jhc.Logging
 
@@ -26,10 +25,11 @@ import Language.Grin.AST.BasicOperation
 import Language.Grin.AST.Lambda
 import Language.Grin.AST.Var
 import Language.Grin.AST.Val
-import Language.Grin.AST.Tag
+-- import Language.Grin.AST.Tag
 import Language.Grin.AST.Type
 import Language.Grin.AST.Expression
 import Language.Grin.Internal.Classes
+import Language.Grin.Internal.Classes.PrimOpr
 import Language.Grin.Data.TypeEnv
 import Language.Grin.Data.Config
 
@@ -44,21 +44,29 @@ data TcEnv sym primtypes = TcEnv {
     envLogFunc :: LogFunc
 }
 instance HasGrinConfig (TcEnv sym primtypes) where grinConfig = envGrinConfig
+instance HasLogFunc (TcEnv sym primtypes) where getLogFunc = envLogFunc
+instance HasTypeEnv (TcEnv sym primtypes) sym primtypes where
+  getTypeEnv = envTyEnv
 
-
-progTypecheck :: (Monad m, MonadIO m, MonadReader env m, HasLogFunc env,
-                  HasGrinConfig env)
-              => Program sym primtypes primope primval -> m ()
+progTypecheck :: (Monad m, MonadIO m, MonadFail m,
+                  MonadReader env m, HasLogFunc env,
+                  HasGrinConfig env,
+                  Ord sym, Pretty sym,
+                  Eq primtypes, Pretty primtypes, PrimType primtypes,
+                  Pretty primval,
+                  PrimOpr primopr,
+                  Bounded Var)
+              => Program sym primtypes primopr primval -> m ()
 progTypecheck Program{..} = do
   env <- ask
   when (isGrinSwitchEnabled CfgLintCheck env) $ do
-    bs <- runReader (mapM (runMaybeT . lamTypecheck' . funcDefBody) progFunctions)
-                             TcEnv {
-                               envTyEnv = progTypeEnv,
-                               envInScope = ESet.fromList $ map fst progCafs,
-                               envGrinConfig = grinConfig env,
-                               envLogFunc = getLogFunc env } :: m (Maybe [Typ primtypes])
-    unless (b || isGrinSwitchEnabled CfgKeepGoing env) $
+    bs <- runReaderT (mapM (runMaybeT . lamTypecheck' . funcDefBody) progFunctions)
+            TcEnv {
+              envTyEnv = progTypeEnv,
+              envInScope = ESet.fromList $ map fst progCafs,
+              envGrinConfig = grinConfig env,
+              envLogFunc = getLogFunc env } -- :: m [Maybe [Typ primtypes]]
+    unless (all isJust bs || isGrinSwitchEnabled CfgKeepGoing env) $
       fail "There are type errors."
 
 
@@ -76,9 +84,9 @@ prettyTypemismatch :: (Pretty primtypes)
                    => Doc 
                    -> [Typ primtypes] -> [Typ primtypes]
                    -> Doc -> Doc
-prettyTypemismatch somewhere exp act cnxt =
+prettyTypemismatch somewhere excpt act cnxt =
     "Type mismatch." <> line <> 
-      indent 2 ("Expected" <> colon <+> f exp <> line <>
+      indent 2 ("Expected" <> colon <+> f excpt <> line <>
                 "Actual" <> colon <+> f act <> line <>
                 "in" <+> somewhere <> colon <+> pretty cnxt)
   where
@@ -91,8 +99,15 @@ prettyTypemismatch somewhere exp act cnxt =
 
 
 lamTypecheck :: (Monad m, MonadIO m, MonadFail m,
+                 Expr expr,
                  sym ~ ExprSym expr, primtypes ~ ExprPrimTypes expr,
-                 Eq primtypes,
+                 primval ~ ExprPrimVal expr,
+                 Expression'' ~ ExprRep expr,
+                 Ord sym, Pretty sym,
+                 Eq primtypes, PrimType primtypes, Pretty primtypes,
+                 Pretty primval,
+                 Pretty expr,
+                 Pretty (Lambda expr),
                  MonadReader (TcEnv sym primtypes) m)
              => [Typ primtypes] -> Lambda expr -> m [Typ primtypes]
 lamTypecheck ty lam@Lambda{..} =
@@ -107,13 +122,17 @@ lamTypecheck ty lam@Lambda{..} =
 
 
 
-lamTypecheck' :: (Monad m, MonadIO m,
+lamTypecheck' :: (Monad m, MonadIO m, MonadFail m,
                   Expr expr, Expression'' ~ ExprRep expr,
                   sym ~ ExprSym expr, primtypes ~ ExprPrimTypes expr,
+                  primval ~ ExprPrimVal expr,
+                  Ord sym, Pretty sym,
+                  Eq primtypes, PrimType primtypes, Pretty primtypes,
+                  Pretty primval,
                   Pretty expr,
                   MonadReader (TcEnv sym primtypes) m)
               => Lambda expr -> m [Typ primtypes]
-lamTypecheck' lam@Lambda{..} =
+lamTypecheck' Lambda{..} =
   local (\e -> e { envInScope = valFreeVars lamBind <> envInScope e }) $
     mapM_ valTypecheck lamBind >> exprTypecheck lamExpr
 
@@ -122,10 +141,14 @@ lamTypecheck' lam@Lambda{..} =
 
 
 
-valTypecheck :: (Monad m, MonadIO m,
+valTypecheck :: (Monad m, MonadIO m, MonadFail m,
                  -- Expr expr, Expression'' ~ ExprRep expr,
                  -- sym ~ ExprSym expr, primtypes ~ ExprPrimTypes expr,
                  -- primval ~ ExprPrimVal expr,
+                 Ord sym,
+                 Pretty sym,
+                 PrimType primtypes, Eq primtypes,
+                 Pretty primval, Pretty primtypes,
                  MonadReader (TcEnv sym primtypes) m)
              => Val sym primtypes primval -> m (Typ primtypes)
 valTypecheck = \case
@@ -144,11 +167,10 @@ valTypecheck = \case
   ValUnknown t -> return t
   ValPrim _ vs ty -> mapM_ valTypecheck vs >> return ty
   n@(ValNodeC tg as) -> do
-    te <- asks envTyEnv
-    (as',_) <- findArgsType te tg
+    TypeOfType { typSlots = as' } <- findTypeOfType tg
     as'' <- mapM valTypecheck as
     if as'' == as'
-       then return TyNode
+       then return TypNode
        else logErrorFail logsrc $
          "NodeC:" <+> align ("arguments do not match" <+> pretty as'' <> line
                              <> "with:" <+> pretty as' <> line
@@ -158,15 +180,20 @@ valTypecheck = \case
 
 
 
-exprTypecheck :: (Monad m, MonadIO m,
-                  Expr expr, Expression'' ~ ExprRep expr,
+exprTypecheck :: (Monad m, MonadIO m, MonadFail m,
+                  Expr expr, Expression'' ~ ExprRep expr, Pretty expr,
                   sym ~ ExprSym expr, primtypes ~ ExprPrimTypes expr,
-                  Pretty expr,
+                  primval ~ ExprPrimVal expr,
+                  Ord sym, Pretty sym,
+                  PrimType primtypes, Eq primtypes, Pretty primtypes,
+                  Pretty (Lambda expr), Pretty primval,
                   MonadReader (TcEnv sym primtypes) m)
               => expr -> m [Typ primtypes]
 exprTypecheck e = case exprUnwrap e of
-  ExprBind lhs rhs -> lamTypecheck <$> exprTypecheck lhs <*> pure rhs
-  ExprPrim p vs t' -> mapM_ valTypecheck vs >> pure t'
+  ExprBind lhs rhs -> do
+    ts <- exprTypecheck lhs
+    lamTypecheck ts rhs
+  ExprPrim _ vs t' -> mapM_ valTypecheck vs >> pure t'
   ExprBaseOp (Apply t) vs -> mapM valTypecheck vs >>= \case
     (v':_) -> if v' == TypNode
        then pure t
@@ -193,8 +220,7 @@ exprTypecheck e = case exprUnwrap e of
     [TypPtr t] -> pure [t]
     _ -> logErrorFail logsrc "Bad argumebts of PeekVal."
   ExprApp fn as t -> do
-    te <- asks envTyEnv
-    (as',t') <- findArgsType te fn
+    TypeOfType { typSlots = as', typReturn = t' } <- findTypeOfType fn
     as'' <- mapM valTypecheck as
     if t' == t then
         if as'' == as'
@@ -216,12 +242,17 @@ exprTypecheck e = case exprUnwrap e of
               logErrorFail logsrc $ prettyTypemismatch "case clause" x0 x1 (pretty y1)
             g (x0:xs) (y0:ys)
         g _ _ = return True
-    g es as
-    head es
-  ExprLet{..} ->
-    local (\e -> e { envTyEnv = extendTyEnv expDefs (envTyEnv e)}) $ do
-      mapM_ (lamTypecheck' . funcDefBody) expDefs
-      exprTypecheck expBody
+    _ <- g es as
+    return $ head es
+  ExprLet{..} -> do
+    te <- asks getTypeEnv
+    case extendTyEnv expDefs te of
+      Left err -> logErrorFail logsrc $
+        "failed to extend TypeEnv" <> hsep (map pretty err)
+      Right ty ->
+        local (\env' -> env' { envTyEnv = ty }) $ do
+          mapM_ (lamTypecheck' . funcDefBody) expDefs
+          exprTypecheck expBody
   _-> logErrorFail logsrc $ "Bad expr passed to exprTypecheck" <> pretty e
 
 
@@ -244,7 +275,6 @@ dshow x = escapeStr $ displayS (renderCompact $ plain $ pretty x) ""
 funArg, funRet :: Pretty a => a -> Int -> String
 funArg n i = dshow n ++ "@arg@" ++ show i
 funRet n i = dshow n ++ "@ret@" ++ show i
-
 
 #if 0
 dumpProgram :: (Monad m, MonadIO m, MonadReader env m,
@@ -352,6 +382,5 @@ printDL h n bs e = liftIO $ f' bs e where
     mapM_ (\ (x,t) ->
              when (t == TypNode || t == TypINode) $ setUnknown h x r)
           (Set.toList $ valFreeVars' l)
-
 #endif
 
