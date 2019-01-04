@@ -54,8 +54,9 @@ progTypecheck :: (Monad m, MonadIO m, MonadFail m,
                   Ord sym, Pretty sym,
                   Eq primtypes, Pretty primtypes, PrimType primtypes,
                   Pretty primval,
-                  PrimOpr primopr,
-                  Bounded Var)
+                  PrimOpr primopr, Pretty primopr,
+                  Bounded Var
+                 )
               => Program sym primtypes primopr primval -> m ()
 progTypecheck Program{..} = do
   env <- ask
@@ -142,9 +143,6 @@ lamTypecheck' Lambda{..} =
 
 
 valTypecheck :: (Monad m, MonadIO m, MonadFail m,
-                 -- Expr expr, Expression'' ~ ExprRep expr,
-                 -- sym ~ ExprSym expr, primtypes ~ ExprPrimTypes expr,
-                 -- primval ~ ExprPrimVal expr,
                  Ord sym,
                  Pretty sym,
                  PrimType primtypes, Eq primtypes,

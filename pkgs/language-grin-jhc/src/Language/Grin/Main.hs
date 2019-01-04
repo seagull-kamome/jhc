@@ -1,4 +1,4 @@
-module Grin.Main(compileToGrin) where
+module Language.Grin.Main(compileToGrin) where
 
 import Control.Monad
 import Data.List

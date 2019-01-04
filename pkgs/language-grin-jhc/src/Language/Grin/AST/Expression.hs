@@ -373,11 +373,14 @@ newtype Expression sym primtypes primopr primval
                  (Expression sym primtypes primopr primval) )
   -- deriving (Show, Eq, Ord)
 
-instance (PrimType primtypes, Pretty sym, Pretty primtypes, Pretty primval, PrimOpr primopr)
+instance (Pretty sym,
+          PrimType primtypes, Pretty primtypes,
+          PrimOpr primopr, Pretty primopr,
+          Pretty primval)
     => Pretty (Expression sym primtypes primopr primval) where
   pretty (Expression x) = pretty x
 
-instance Expr (Expression sym primtypes primopr primval) where
+instance (PrimType primtypes) => Expr (Expression sym primtypes primopr primval) where
   type ExprSym       (Expression sym primtypes primopr primval) = sym
   type ExprPrimTypes (Expression sym primtypes primopr primval) = primtypes
   type ExprPrimOpr   (Expression sym primtypes primopr primval) = primopr

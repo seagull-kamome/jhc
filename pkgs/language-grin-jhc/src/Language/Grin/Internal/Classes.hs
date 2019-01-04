@@ -3,10 +3,15 @@ module Language.Grin.Internal.Classes (
   ) where
 
 import qualified Data.Text as T
+import Text.PrettyPrint.ANSI.Leijen hiding((<$>), bool)
 
 -- ---------------------------------------------------------------------------
 
-class Expr e where
+class PrimType primtypes where
+  varPrefix :: primtypes -> T.Text
+
+
+class (Ord (ExprSym e), PrimType (ExprPrimTypes e)) => Expr e where
   type ExprSym e :: *
   type ExprPrimTypes e :: *
   type ExprPrimOpr e :: *
@@ -14,13 +19,6 @@ class Expr e where
   type ExprRep e :: * -> * -> * -> * -> * -> *
   exprUnwrap :: e -> ExprRep e (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e
   exprWrap :: ExprRep e (ExprSym e) (ExprPrimTypes e) (ExprPrimOpr e) (ExprPrimVal e) e -> e
-
-
-
-
-
-class PrimType primtypes where
-  varPrefix :: primtypes -> T.Text
 
 
 -- vim : ts=2 sw=2 expandtab :
